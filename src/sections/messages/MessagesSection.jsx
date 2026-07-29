@@ -1,0 +1,131 @@
+import React, { useState, useRef, useEffect } from 'react';
+import I from '../../icons/icons.jsx';
+import { Av } from '../../components/index.jsx';
+import { nowTime } from '../../utils/helpers.js';
+import SEED from '../../data/seed.js';
+
+function MessagesSection(){
+  const [convos,setConvos]=useState(SEED.conversations);
+  const [active,setActive]=useState(null);
+  const [input,setInput]=useState("");
+  const [mobileView,setMobileView]=useState("list");
+  const [chatActionOpen,setChatActionOpen]=useState(false);
+  const endRef=useRef(null);
+  const actionRef=useRef(null);
+
+  useEffect(()=>{
+    if(endRef.current) endRef.current.scrollIntoView({behavior:"smooth"});
+  },[active]);
+
+  useEffect(()=>{
+    function h(e){if(actionRef.current&&!actionRef.current.contains(e.target))setChatActionOpen(false);}
+    document.addEventListener("mousedown",h);
+    return()=>document.removeEventListener("mousedown",h);
+  },[]);
+
+  function openConvo(c){
+    const fresh=convos.find(cv=>cv.id===c.id);
+    setConvos(p=>p.map(cv=>cv.id===c.id?{...cv,unread:0}:cv));
+    setActive({...(fresh||c),unread:0});
+    setMobileView("chat");
+  }
+  function goBack(){setMobileView("list");setActive(null);}
+  function send(){
+    if(!input.trim()||!active) return;
+    const m={id:Date.now(),me:true,text:input,time:nowTime()};
+    const updated={...active,messages:[...active.messages,m],preview:input};
+    setConvos(p=>p.map(c=>c.id===active.id?updated:c));
+    setActive(updated);setInput("");
+  }
+
+  const chatActions=[
+    {l:"Clear message history",ic:<I.Trash/>,danger:false},
+    {l:"Change chat background",ic:<I.Palette/>,danger:false},
+    {l:"View profile",ic:<I.User/>,danger:false},
+    {l:"Block user",ic:<I.Ban/>,danger:true},
+  ];
+
+  const MsgList=(
+    <div className="msg-sb">
+      <div className="msg-sb-hd">
+        <div className="sbar"><I.Search/><input placeholder="Search messages…"/></div>
+      </div>
+      <div className="msg-list">
+        {convos.map(c=>(
+          <div key={c.id} className={"convo"+(active&&active.id===c.id&&mobileView==="chat"?" on":"")} onClick={()=>openConvo(c)}>
+            <Av initials={c.initials}/>
+            <div className="convo-info"><div className="convo-name">{c.name}</div><div className="convo-prev">{c.preview}</div></div>
+            <div className="convo-meta">
+              <div className="convo-time">{c.time}</div>
+              {c.unread>0&&<div className="unread">{c.unread}</div>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  const ChatView=active?(
+    <div className="chat-area">
+      <div className="chat-hd">
+        <button className="ib" onClick={goBack} style={{flexShrink:0}}><I.ArrowL/></button>
+        <Av initials={active.initials}/>
+        <div style={{flex:1}}>
+          <div style={{fontWeight:700,fontSize:13,color:"var(--t1)"}}>{active.name}</div>
+          <div className="chat-status">● Online</div>
+        </div>
+        <button className="ib"><I.Phone/></button>
+        <div style={{position:"relative"}} ref={actionRef}>
+          <button className="ib" onClick={()=>setChatActionOpen(v=>!v)}><I.MoreV/></button>
+          {chatActionOpen&&(
+            <div className="chat-action-dd">
+              {chatActions.map((a,i)=>(
+                <button key={i} className={"cad-item"+(a.danger?" danger":"")} onClick={()=>{setChatActionOpen(false);}}>
+                  {a.ic}{a.l}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="chat-msgs">
+        {active.messages.map(m=>(
+          <div key={m.id} className={"brow"+(m.me?" me":"")}>
+            {!m.me&&<Av initials={active.initials} size="sm"/>}
+            <div className="bub-wrap">
+              <div className={"bub"+(m.me?" bub-me":" bub-them")}>{m.text}</div>
+              <div className="bub-time">{m.time||"now"}</div>
+            </div>
+          </div>
+        ))}
+        <div ref={endRef}/>
+      </div>
+      <div className="chat-bar">
+        <button className="chat-plus-btn"><I.Plus/></button>
+        <textarea className="chat-field" rows={1} placeholder="Message…" value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}}}/>
+        <button className="send-btn" onClick={send}><I.Send/></button>
+      </div>
+    </div>
+  ):(
+    <div style={{display:"flex",alignItems:"center",justifyContent:"center",flex:1,background:"var(--bg)"}}>
+      <div className="empty"><div className="empty-ico">💬</div><div className="empty-t">Select a conversation</div></div>
+    </div>
+  );
+
+  return(
+    <div className="main">
+      <div style={{flex:1,overflow:"hidden"}}>
+        <div className={"msg-shell"+(mobileView==="list"?" msg-list-view":" msg-chat-view")}>
+          {MsgList}
+          {ChatView}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
+   ACCOUNT SECTION
+   ============================================================ */
+
+export default MessagesSection;
