@@ -2,14 +2,17 @@ import React, { useState, useRef, useEffect } from 'react';
 import I from '../../icons/icons.jsx';
 import { Av } from '../../components/index.jsx';
 import { nowTime } from '../../utils/helpers.js';
-import SEED from '../../data/seed.js';
+import { useAuth } from '../../context/AuthContext.jsx';
+import { fetchConversations, fetchMessages, sendMessage } from '../../services/supabaseService.js';
 
-function MessagesSection(){
-  const [convos,setConvos]=useState(SEED.conversations);
+function MessagesSection({ showToast, onUnreadChange }){
+  const { user } = useAuth();
+  const [convos,setConvos]=useState([]);
   const [active,setActive]=useState(null);
   const [input,setInput]=useState("");
   const [mobileView,setMobileView]=useState("list");
   const [chatActionOpen,setChatActionOpen]=useState(false);
+  const [loading,setLoading]=useState(true);
   const endRef=useRef(null);
   const actionRef=useRef(null);
 
@@ -18,24 +21,82 @@ function MessagesSection(){
   },[active]);
 
   useEffect(()=>{
+    async function loadConversations(){
+      if(!user?.id) return;
+      setLoading(true);
+      try {
+        const data = await fetchConversations(user.id);
+        const convosList = (data||[]).map(conv => ({
+          ...conv,
+          name: conv.name || 'Conversation',
+          initials: conv.initials || (conv.name ? conv.name.split(' ').map(p=>p[0]).join('').slice(0,2).toUpperCase() : 'XX'),
+          preview: conv.preview || '',
+          unread: conv.unread || 0,
+          time: conv.updated_at ? new Date(conv.updated_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : 'Now',
+        }));
+        setConvos(convosList);
+        onUnreadChange?.(convosList.reduce((sum, c) => sum + (c.unread || 0), 0));
+      } catch (error) {
+        console.error('Error loading conversations', error);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadConversations();
+  }, [user, onUnreadChange]);
+
+  useEffect(()=>{
     function h(e){if(actionRef.current&&!actionRef.current.contains(e.target))setChatActionOpen(false);}
     document.addEventListener("mousedown",h);
     return()=>document.removeEventListener("mousedown",h);
   },[]);
 
-  function openConvo(c){
-    const fresh=convos.find(cv=>cv.id===c.id);
-    setConvos(p=>p.map(cv=>cv.id===c.id?{...cv,unread:0}:cv));
-    setActive({...(fresh||c),unread:0});
-    setMobileView("chat");
+  async function openConvo(c){
+    try {
+      const messages = await fetchMessages(c.id);
+      const fresh = convos.find(cv=>cv.id===c.id) || c;
+      const updated = {
+        ...fresh,
+        ...c,
+        messages: (messages || []).map(m => ({
+          id: m.id,
+          me: m.sender_id === user?.id,
+          text: m.text || m.body || '',
+          time: m.created_at ? new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : nowTime(),
+        })),
+        unread: 0,
+      };
+      setConvos(p=>{
+        const updatedConvos = p.map(cv=>cv.id===c.id?{...cv,unread:0}:cv);
+        onUnreadChange?.(updatedConvos.reduce((sum, cv) => sum + (cv.unread || 0), 0));
+        return updatedConvos;
+      });
+      setActive(updated);
+      setMobileView("chat");
+    } catch (error) {
+      console.error('Error loading chat messages', error);
+      showToast?.('error','Unable to open conversation.');
+    }
   }
   function goBack(){setMobileView("list");setActive(null);}
-  function send(){
-    if(!input.trim()||!active) return;
-    const m={id:Date.now(),me:true,text:input,time:nowTime()};
-    const updated={...active,messages:[...active.messages,m],preview:input};
-    setConvos(p=>p.map(c=>c.id===active.id?updated:c));
-    setActive(updated);setInput("");
+  async function send(){
+    if(!input.trim()||!active||!user?.id) return;
+    const localMessage={id:Date.now(),me:true,text:input,time:nowTime()};
+    const updated={...active,messages:[...active.messages,localMessage],preview:input};
+    setConvos(p=>p.map(c=>c.id===active.id?{...c,preview:input}:c));
+    setActive(updated);
+    setInput("");
+    try {
+      await sendMessage({
+        conversation_id: active.id,
+        sender_id: user.id,
+        text: input,
+        created_at: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error('Error sending message', error);
+      showToast('error','Unable to send message right now.');
+    }
   }
 
   const chatActions=[

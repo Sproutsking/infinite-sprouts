@@ -3,7 +3,7 @@ import I from '../../icons/icons.jsx';
 import { Av, Modal } from '../../components/index.jsx';
 import { fmt } from '../../utils/helpers.js';
 import { SocialCtx } from '../../context/SocialContext.jsx';
-import SEED from '../../data/seed.js';
+import { useAuth } from '../../context/AuthContext.jsx';
 import { AuthorTrigger } from '../../popovers/ProfilePopover.jsx';
 import { CommunityTrigger } from '../../popovers/CommunityPopover.jsx';
 import PostActionMenu from '../../popovers/PostActionMenu.jsx';
@@ -12,16 +12,18 @@ import SharePanel from '../../popovers/SharePanel.jsx';
 import ProfilePage from './pages/ProfilePage.jsx';
 import PostView from './pages/PostView.jsx';
 import CommunityFeed from './pages/CommunityFeed.jsx';
+import { fetchProfiles, fetchCommunities, fetchPosts, fetchCommentsForPosts, createPost } from '../../services/supabaseService.js';
 
 function LinkSection({showToast,onGoToMessages}){
+  const { user, profile } = useAuth();
   const [page,setPage]=useState({type:"feed"});
   const [tab,setTab]=useState("discover");
-  const [posts,setPosts]=useState(SEED.posts);
-  const [comments,setComments]=useState(SEED.comments);
-  const [communities,setCommunities]=useState(SEED.communities);
-  const [users]=useState(SEED.users);
+  const [posts,setPosts]=useState([]);
+  const [comments,setComments]=useState({});
+  const [communities,setCommunities]=useState([]);
+  const [users,setUsers]=useState({});
   const [liked,setLiked]=useState({});
-  const [following,setFollowing]=useState({"chidi-okafor":false,"amaka-eze":false,"musa-abdullahi":false});
+  const [following,setFollowing]=useState({});
   const [compose,setCompose]=useState("");
   const [reqCommOpen,setReqCommOpen]=useState(false);
   const [savedMap,setSavedMap]=useState({});
@@ -30,16 +32,124 @@ function LinkSection({showToast,onGoToMessages}){
   const [discoverSearch,setDiscoverSearch]=useState("");
   const [discoverFilter,setDiscoverFilter]=useState("All");
   const [filterDropOpen,setFilterDropOpen]=useState(false);
+  const [loading,setLoading]=useState(true);
   const filterRef=useRef(null);
+
   useEffect(()=>{
     function h(e){if(filterRef.current&&!filterRef.current.contains(e.target))setFilterDropOpen(false);}
     if(filterDropOpen) document.addEventListener("mousedown",h);
     return()=>document.removeEventListener("mousedown",h);
   },[filterDropOpen]);
 
+  useEffect(()=>{
+    async function loadFeed(){
+      setLoading(true);
+      try {
+        const [profiles, comms, postRows] = await Promise.all([
+          fetchProfiles(),
+          fetchCommunities(),
+          fetchPosts(),
+        ]);
+
+        const profileMap = profiles.reduce((acc, item) => {
+          const fullName = item.full_name || item.name || item.email || 'Sprouts User';
+          acc[item.id] = {
+            id: item.id,
+            name: fullName,
+            initials: item.initials || (fullName.split(' ').slice(0,2).map(p=>p[0]).join('').toUpperCase()) || 'US',
+            role: item.role || 'Member',
+            bio: item.bio || '',
+            followers: item.followers || 0,
+            following: item.following || 0,
+            joined: item.joined || '',
+          };
+          return acc;
+        }, {});
+
+        const normalizedPosts = postRows.map(p => ({
+          id: p.id,
+          authorId: p.author_id || p.authorId || p.user_id || 'unknown',
+          body: p.body || p.content || '',
+          time: p.created_at ? new Date(p.created_at).toLocaleDateString() : 'now',
+          tags: p.tags || [],
+          likes: p.likes || 0,
+          comments: p.comments || 0,
+          shares: p.shares || 0,
+          communityId: p.community_id || p.communityId || null,
+          image: p.image || p.media || null,
+        }));
+
+        setUsers(profileMap);
+        setCommunities(comms.map(c => ({
+          ...c,
+          members: c.members || 0,
+          posts: c.posts || 0,
+          followed: !!c.followed,
+          notif: !!c.notif,
+          count: c.count || 0,
+          ico: c.ico || '🌱',
+          desc: c.desc || '',
+        })));
+        setPosts(normalizedPosts);
+
+        const commentMap = await fetchCommentsForPosts(normalizedPosts.map(p => p.id));
+        setComments(commentMap);
+        setFollowing(Object.keys(profileMap).reduce((acc, key) => ({ ...acc, [key]: false }), {}));
+      } catch (error) {
+        console.error('Error loading link feed', error);
+        showToast('error', 'Unable to load social feed.');
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadFeed();
+  }, [showToast]);
+
   function toggleLike(id){
     setLiked(p=>({...p,[id]:!p[id]}));
     setPosts(p=>p.map(x=>x.id===id?{...x,likes:x.likes+(liked[id]?-1:1)}:x));
+  }
+
+  async function submitPost(communityId){
+    if(!compose.trim()) return;
+    const tagMatches=compose.match(/#([a-zA-Z0-9_]+)/g)||[];
+    const extractedTags=[...new Set(tagMatches.map(t=>t.slice(1)))];
+    const cleanBody=compose.replace(/#([a-zA-Z0-9_]+)/g," ").replace(/\s{2,}/g," ").trim();
+    const payload={
+      author_id: profile?.id || user?.id,
+      body: cleanBody,
+      tags: extractedTags,
+      community_id: communityId || null,
+      likes:0,
+      shares:0,
+      created_at:new Date().toISOString(),
+    };
+    try {
+      const newPost = await createPost(payload);
+      const formatted = {
+        id: newPost.id,
+        authorId: newPost.author_id || newPost.authorId || newPost.user_id || profile?.id || user?.id,
+        body: newPost.body || cleanBody,
+        time: newPost.created_at ? new Date(newPost.created_at).toLocaleDateString() : 'now',
+        tags: newPost.tags || extractedTags,
+        likes: newPost.likes || 0,
+        comments: 0,
+        shares: newPost.shares || 0,
+        communityId: newPost.community_id || newPost.communityId || communityId || null,
+        image: newPost.image || null,
+      };
+      setPosts(p=>[formatted,...p]);
+      setCompose("");
+      if(communityId){
+        setCommunities(p=>p.map(c=>c.id===communityId?{...c,posts:(c.posts||0)+1}:c));
+      } else {
+        setTab("discover");
+      }
+      showToast("ok","Post published!");
+    } catch (error) {
+      console.error('Error creating post', error);
+      showToast('error','Unable to publish post.');
+    }
   }
   function submitPost(communityId){
     if(!compose.trim()) return;
