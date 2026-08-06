@@ -2,11 +2,14 @@ import React, { useState, useRef, useEffect } from 'react';
 import I from '../../../icons/icons.jsx';
 import { Av, Modal } from '../../../components/index.jsx';
 import { useSocial } from '../../../context/SocialContext.jsx';
+import { useAuth } from '../../../context/AuthContext.jsx';
 import { AuthorTrigger, AuthorName } from '../../../popovers/ProfilePopover.jsx';
 import { CommentActionMenu } from '../../../popovers/CommentActionMenu.jsx';
 import PostActionMenu from '../../../popovers/PostActionMenu.jsx';
+import { createComment } from '../../../services/postService.js';
 
 function PostView({postId,highlightCommentId,posts,comments,setComments,users,liked,onToggleLike,onBack,showToast,onSave,onShare,onDeletePost}){
+  const { user, profile } = useAuth();
   const post=posts.find(p=>p.id===postId);
   const postComments=comments[postId]||[];
   const [commentText,setCommentText]=useState("");
@@ -24,19 +27,42 @@ function PostView({postId,highlightCommentId,posts,comments,setComments,users,li
   if(!post) return null;
   const author=users[post.authorId];
 
-  function postComment(){
+  async function postComment(){
     if(!commentText.trim()) return;
-    const c={id:Date.now(),authorId:"you",text:commentText,time:"now",likes:0,replies:[]};
-    setComments(p=>({...p,[postId]:[...(p[postId]||[]),c]}));
-    setCommentText("");
-    showToast("ok","Comment posted!");
+    try {
+      const createdComment = await createComment({
+        postId,
+        authorId: profile?.id || user?.id,
+        body: commentText.trim(),
+        createdAt: new Date().toISOString(),
+      });
+      const c={id:createdComment.id,authorId:createdComment.authorId||profile?.id||user?.id,text:createdComment.body||commentText.trim(),time:createdComment.createdAt?new Date(createdComment.createdAt).toLocaleDateString():"now",likes:0,replies:[]};
+      setComments(p=>({...p,[postId]:[...(p[postId]||[]),c]}));
+      setCommentText("");
+      showToast("ok","Comment posted!");
+    } catch (error) {
+      console.error('Error creating comment', error);
+      showToast('error','Unable to post comment.');
+    }
   }
-  function postReply(commentId){
+  async function postReply(commentId){
     if(!replyText.trim()) return;
-    const r={id:Date.now(),authorId:"you",text:replyText,time:"now",likes:0};
-    setComments(p=>({...p,[postId]:(p[postId]||[]).map(c=>c.id===commentId?{...c,replies:[...(c.replies||[]),r]}:c)}));
-    setReplyText("");setReplyingTo(null);
-    showToast("ok","Reply posted!");
+    try {
+      const createdReply = await createComment({
+        postId,
+        parentCommentId: commentId,
+        authorId: profile?.id || user?.id,
+        body: replyText.trim(),
+        createdAt: new Date().toISOString(),
+      });
+      const r={id:createdReply.id,authorId:createdReply.authorId||profile?.id||user?.id,text:createdReply.body||replyText.trim(),time:createdReply.createdAt?new Date(createdReply.createdAt).toLocaleDateString():"now",likes:0};
+      setComments(p=>({...p,[postId]:(p[postId]||[]).map(c=>c.id===commentId?{...c,replies:[...(c.replies||[]),r]}:c)}));
+      setReplyText("");setReplyingTo(null);
+      showToast("ok","Reply posted!");
+    } catch (error) {
+      console.error('Error creating reply', error);
+      showToast('error','Unable to post reply.');
+    }
   }
   function toggleCommentLike(id){setCommentLiked(p=>({...p,[id]:!p[id]}));}
   function deleteTopComment(commentId){

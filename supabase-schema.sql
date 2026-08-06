@@ -68,7 +68,7 @@ create table if not exists posts (
   author_id uuid not null references auth.users(id) on delete cascade,
   body text,
   tags text[],
-  community_id bigserial references communities(id),
+  community_id bigint references communities(id),
   image text,
   likes integer default 0,
   shares integer default 0,
@@ -79,11 +79,29 @@ create table if not exists posts (
 -- Comments: replies on posts
 create table if not exists comments (
   id bigserial primary key,
-  post_id bigserial not null references posts(id) on delete cascade,
-  parent_comment_id bigserial references comments(id),
+  post_id bigint not null references posts(id) on delete cascade,
+  parent_comment_id bigint references comments(id),
   author_id uuid not null references auth.users(id) on delete cascade,
-  text text,
+  body text,
   likes integer default 0,
+  created_at timestamptz default now()
+);
+
+-- Post likes: likes for feed posts
+create table if not exists post_likes (
+  id bigserial primary key,
+  post_id bigint not null references posts(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz default now(),
+  unique(post_id, user_id)
+);
+
+-- Shares: share records for posts
+create table if not exists shares (
+  id bigserial primary key,
+  post_id bigint not null references posts(id) on delete cascade,
+  author_id uuid not null references auth.users(id) on delete cascade,
+  message text,
   created_at timestamptz default now()
 );
 
@@ -152,7 +170,7 @@ create table if not exists conversations (
 -- Messages: chat messages in conversations
 create table if not exists messages (
   id bigserial primary key,
-  conversation_id bigserial not null references conversations(id) on delete cascade,
+  conversation_id bigint not null references conversations(id) on delete cascade,
   sender_id uuid not null references auth.users(id) on delete cascade,
   text text,
   created_at timestamptz default now()

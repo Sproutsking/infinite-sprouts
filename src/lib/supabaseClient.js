@@ -12,6 +12,11 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     persistSession: true,
     autoRefreshToken: true,
   },
+  global: {
+    headers: {
+      'x-application-name': 'infinite-sprouts',
+    },
+  },
 });
 
 export default supabase;

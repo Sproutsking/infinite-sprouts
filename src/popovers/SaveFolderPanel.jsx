@@ -3,12 +3,7 @@ import I from '../icons/icons.jsx';
 import { Modal } from '../components/index.jsx';
 
 function SaveFolderPanel({open,onClose,post,savedMap,onToggleSave,showToast}){
-  const [folders,setFolders]=useState([
-    {id:"f1",name:"Favorites",ico:"⭐",color:"var(--blue)"},
-    {id:"f2",name:"Irrigation Ideas",ico:"💧",color:"var(--teal)"},
-    {id:"f3",name:"Market Insights",ico:"📊",color:"var(--gold)"},
-    {id:"f4",name:"Read Later",ico:"🔖",color:"var(--purple)"},
-  ]);
+  const [folders,setFolders]=useState([]);
   const [newFolderOpen,setNewFolderOpen]=useState(false);
   const [newFolderName,setNewFolderName]=useState("");
   const postId=post?.id;

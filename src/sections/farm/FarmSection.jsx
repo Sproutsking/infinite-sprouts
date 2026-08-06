@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import I from '../../icons/icons.jsx';
-import { Av, Modal } from '../../components/index.jsx';
+import { Av, Modal, ProgBar } from '../../components/index.jsx';
 import { fmt, pct } from '../../utils/helpers.js';
 import { fetchFarms, fetchMarketItems, buyItem } from '../../services/supabaseService.js';
 import BuyModal from './modals/BuyModal.jsx';
@@ -117,7 +117,12 @@ function FarmSection({walletIST,walletNaira,onSpend,showToast,listOpen,setListOp
       <div className="scroll">
         {tab==="invest"?<>
           <div className="stat-row">
-            {[["🌾","24","Active Farms"],["👥","1,247","Investors"],["💎","12.5M","IST Invested"],["📈","92%","Success Rate"]].map(([ic,v,l])=>(
+            {[
+              ["🌾", farms.length || 0, "Active Farms"],
+              ["💎", fmt((farms||[]).reduce((sum,f)=>sum + Number(f.funded||0),0)), "IST Invested"],
+              ["📈", farms.length ? `${Math.round((farms.reduce((sum,f)=>sum + Number(f.roi||0),0) / farms.length) * 10) / 10}%` : '0%', "Avg ROI"],
+              ["🏷️", (farms||[]).reduce((sum,f)=>sum + Number(f.shares||0),0), "Shares Listed"],
+            ].map(([ic,v,l])=>(
               <div key={l} className="stat-tile"><div className="stat-ico">{ic}</div><div className="stat-v">{v}</div><div className="stat-l">{l}</div></div>
             ))}
           </div>

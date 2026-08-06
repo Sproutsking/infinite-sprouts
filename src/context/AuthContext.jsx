@@ -1,8 +1,13 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import supabase from '../lib/supabaseClient.js';
 
-const AuthCtx = React.createContext(null);
-export function useAuth() { return useContext(AuthCtx); }
+const AuthCtx = createContext(null);
+
+export function useAuth() {
+  const ctx = useContext(AuthCtx);
+  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
+  return ctx;
+}
 
 function getInitials(name = '') {
   const parts = name.trim().split(' ').filter(Boolean);
@@ -20,17 +25,20 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [status, setStatus] = useState('idle');
+  const [error, setError] = useState('');
 
-  async function loadProfileForUser(authUser) {
+  const loadProfileForUser = useCallback(async (authUser) => {
     if (!authUser) return;
-    const { data, error } = await supabase
+
+    const { data, error: loadError } = await supabase
       .from('profiles')
       .select('*')
       .eq('id', authUser.id)
       .single();
 
-    if (error && error.details?.includes('Results contain 0 rows')) {
-      const fullName = authUser.user_metadata?.full_name || authUser.email || 'Sprouts User';
+    if (loadError && loadError.details?.includes('Results contain 0 rows')) {
+      const fullName = authUser.user_metadata?.full_name || authUser.user_metadata?.name || authUser.email || 'Sprouts User';
       const initials = getInitials(fullName);
       const avatarUrl = getProviderAvatar(authUser);
       const { data: newProfile, error: insertError } = await supabase
@@ -47,12 +55,15 @@ export function AuthProvider({ children }) {
         })
         .select('*')
         .single();
-      if (!insertError) setProfile(newProfile);
+
+      if (!insertError) {
+        setProfile(newProfile);
+      }
       return;
     }
 
-    if (error) {
-      console.error('Error loading profile:', error);
+    if (loadError) {
+      console.error('Error loading profile:', loadError);
       return;
     }
 
@@ -72,46 +83,55 @@ export function AuthProvider({ children }) {
     }
 
     setProfile(data);
-  }
+  }, []);
+
+  const clearAuthRedirectParams = useCallback(() => {
+    try {
+      const url = new URL(window.location.href);
+      const hash = url.hash.replace(/^#/, '');
+      const searchParams = new URLSearchParams(url.search);
+      const authKeys = ['access_token', 'refresh_token', 'expires_in', 'token_type', 'error', 'error_description', 'type'];
+      let cleaned = false;
+
+      authKeys.forEach((key) => {
+        if (searchParams.has(key)) {
+          searchParams.delete(key);
+          cleaned = true;
+        }
+      });
+
+      if (hash && /(access_token|refresh_token|expires_in|token_type|error|error_description|type)=/.test(hash)) {
+        cleaned = true;
+      }
+
+      if (cleaned) {
+        const newSearch = searchParams.toString();
+        const newUrl = url.pathname + (newSearch ? `?${newSearch}` : '');
+        window.history.replaceState({}, document.title, newUrl);
+      }
+    } catch (err) {
+      console.warn('Unable to clean auth redirect params', err);
+    }
+  }, []);
+
+  const hasAuthRedirectParams = useCallback(() => {
+    return window.location.hash.includes('access_token=')
+      || window.location.hash.includes('error_description=')
+      || window.location.search.includes('access_token=')
+      || window.location.search.includes('error_description=')
+      || window.location.search.includes('type=');
+  }, []);
 
   useEffect(() => {
     let mounted = true;
 
-    async function clearAuthRedirectParams() {
-      try {
-        const url = new URL(window.location.href);
-        const hash = url.hash.replace(/#/, '');
-        const searchParams = new URLSearchParams(url.search);
-        const authKeys = ['access_token', 'refresh_token', 'expires_in', 'token_type', 'error', 'error_description', 'type'];
-        let cleaned = false;
-
-        authKeys.forEach(key => {
-          if (searchParams.has(key)) {
-            searchParams.delete(key);
-            cleaned = true;
-          }
-        });
-
-        if (hash && /(access_token|refresh_token|expires_in|token_type|error|error_description|type)=/.test(hash)) {
-          cleaned = true;
-        }
-
-        if (cleaned) {
-          const newSearch = searchParams.toString();
-          const newUrl = url.pathname + (newSearch ? `?${newSearch}` : '');
-          window.history.replaceState({}, document.title, newUrl);
-        }
-      } catch (error) {
-        console.warn('Unable to clean auth redirect params', error);
-      }
-    }
-
-    const hasAuthRedirectParams = () => {
-      return window.location.hash.includes('access_token=') || window.location.hash.includes('error_description=') || window.location.search.includes('access_token=') || window.location.search.includes('error_description=') || window.location.search.includes('type=');
-    };
-
     const init = async () => {
+      setLoading(true);
+      setStatus('loading');
+      setError('');
+
       let sessionData = null;
+
       if (hasAuthRedirectParams()) {
         try {
           const { data: redirectData, error: redirectError } = await supabase.auth.getSessionFromUrl();
@@ -121,8 +141,8 @@ export function AuthProvider({ children }) {
           if (redirectData?.session) {
             sessionData = redirectData.session;
           }
-        } catch (error) {
-          console.warn('Error handling Supabase OAuth redirect:', error);
+        } catch (err) {
+          console.warn('Error handling Supabase OAuth redirect:', err);
         }
       }
 
@@ -132,18 +152,25 @@ export function AuthProvider({ children }) {
       }
 
       if (!mounted) return;
+
       setSession(sessionData);
       setUser(sessionData?.user || null);
       if (sessionData?.user) {
         await loadProfileForUser(sessionData.user);
+      } else {
+        setProfile(null);
       }
+      setStatus('idle');
+      setError('');
       setLoading(false);
+
       if (hasAuthRedirectParams()) {
         clearAuthRedirectParams();
       }
     };
 
     init();
+
     const { data: listener } = supabase.auth.onAuthStateChange(async (_event, sessionData) => {
       setSession(sessionData || null);
       setUser(sessionData?.user || null);
@@ -152,6 +179,8 @@ export function AuthProvider({ children }) {
       } else {
         setProfile(null);
       }
+      setStatus('idle');
+      setError('');
       setLoading(false);
     });
 
@@ -159,40 +188,74 @@ export function AuthProvider({ children }) {
       mounted = false;
       listener.subscription?.unsubscribe();
     };
-  }, []);
+  }, [clearAuthRedirectParams, hasAuthRedirectParams, loadProfileForUser]);
 
-  async function signInWithGoogle() {
+  const signInWithGoogle = useCallback(async () => {
     setLoading(true);
-    const redirectTo = import.meta.env.VITE_SUPABASE_REDIRECT_URL || window.location.href;
-    const { error } = await supabase.auth.signInWithOAuth({
+    setStatus('loading');
+    setError('');
+
+    const redirectTo = import.meta.env.VITE_SUPABASE_REDIRECT_URL || window.location.origin + window.location.pathname;
+    const { error: signInError } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo },
+      options: {
+        redirectTo,
+        queryParams: { prompt: 'select_account' },
+      },
     });
-    if (error) {
-      console.error('Google sign in error:', error);
+
+    if (signInError) {
+      console.error('Google sign in error:', signInError);
+      setStatus('error');
+      setError(signInError.message || 'Google sign-in failed.');
       setLoading(false);
     }
-  }
+  }, []);
 
-  async function signOut() {
+  const signIn = useCallback(async () => {
+    await signInWithGoogle();
+  }, [signInWithGoogle]);
+
+  const signOut = useCallback(async () => {
     setLoading(true);
-    const { error } = await supabase.auth.signOut();
-    if (error) console.error('Sign out error:', error);
+    setStatus('loading');
+    setError('');
+
+    const { error: signOutError } = await supabase.auth.signOut();
+    if (signOutError) {
+      console.error('Sign out error:', signOutError);
+      setStatus('error');
+      setError(signOutError.message || 'Unable to sign out.');
+      setLoading(false);
+      return;
+    }
+
     setSession(null);
     setUser(null);
     setProfile(null);
+    setStatus('idle');
     setLoading(false);
-  }
+  }, []);
 
-  async function refreshProfile() {
+  const refreshProfile = useCallback(async () => {
     if (user) {
       await loadProfileForUser(user);
     }
-  }
+  }, [loadProfileForUser, user]);
 
-  return (
-    <AuthCtx.Provider value={{ session, user, profile, loading, signInWithGoogle, signOut, refreshProfile }}>
-      {children}
-    </AuthCtx.Provider>
-  );
+  const value = {
+    session,
+    user,
+    profile,
+    loading,
+    status,
+    error,
+    signIn,
+    signInWithGoogle,
+    signOut,
+    refreshProfile,
+    isAuthenticated: !!user,
+  };
+
+  return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
 }

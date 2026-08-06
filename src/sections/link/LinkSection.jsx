@@ -12,7 +12,9 @@ import SharePanel from '../../popovers/SharePanel.jsx';
 import ProfilePage from './pages/ProfilePage.jsx';
 import PostView from './pages/PostView.jsx';
 import CommunityFeed from './pages/CommunityFeed.jsx';
-import { fetchProfiles, fetchCommunities, fetchPosts, fetchCommentsForPosts, createPost } from '../../services/supabaseService.js';
+import { fetchProfiles } from '../../services/supabaseService.js';
+import { fetchPosts, fetchCommentsForPosts, createPost, togglePostLike } from '../../services/postService.js';
+import { fetchCommunities } from '../../services/socialService.js';
 
 function LinkSection({showToast,onGoToMessages}){
   const { user, profile } = useAuth();
@@ -105,13 +107,24 @@ function LinkSection({showToast,onGoToMessages}){
     loadFeed();
   }, [showToast]);
 
-  function toggleLike(id){
-    setLiked(p=>({...p,[id]:!p[id]}));
-    setPosts(p=>p.map(x=>x.id===id?{...x,likes:x.likes+(liked[id]?-1:1)}:x));
+  async function toggleLike(id){
+    const isLiked = !!liked[id];
+    try {
+      const updatedPost = await togglePostLike(id, profile?.id || user?.id, isLiked);
+      setLiked(p=>({...p,[id]:!isLiked}));
+      setPosts(p=>p.map(x=>x.id===id?{...x, likes: updatedPost.likes || 0}:x));
+    } catch (error) {
+      console.error('Error toggling like', error);
+      showToast('error','Unable to update like.');
+    }
   }
 
   async function submitPost(communityId){
     if(!compose.trim()) return;
+    if(!profile?.id && !user?.id){
+      showToast('error','Please sign in to publish posts.');
+      return;
+    }
     const tagMatches=compose.match(/#([a-zA-Z0-9_]+)/g)||[];
     const extractedTags=[...new Set(tagMatches.map(t=>t.slice(1)))];
     const cleanBody=compose.replace(/#([a-zA-Z0-9_]+)/g," ").replace(/\s{2,}/g," ").trim();
@@ -128,14 +141,14 @@ function LinkSection({showToast,onGoToMessages}){
       const newPost = await createPost(payload);
       const formatted = {
         id: newPost.id,
-        authorId: newPost.author_id || newPost.authorId || newPost.user_id || profile?.id || user?.id,
+        authorId: newPost.authorId || profile?.id || user?.id,
         body: newPost.body || cleanBody,
-        time: newPost.created_at ? new Date(newPost.created_at).toLocaleDateString() : 'now',
+        time: newPost.createdAt ? new Date(newPost.createdAt).toLocaleDateString() : 'now',
         tags: newPost.tags || extractedTags,
         likes: newPost.likes || 0,
         comments: 0,
         shares: newPost.shares || 0,
-        communityId: newPost.community_id || newPost.communityId || communityId || null,
+        communityId: newPost.communityId || communityId || null,
         image: newPost.image || null,
       };
       setPosts(p=>[formatted,...p]);
@@ -150,23 +163,6 @@ function LinkSection({showToast,onGoToMessages}){
       console.error('Error creating post', error);
       showToast('error','Unable to publish post.');
     }
-  }
-  function submitPost(communityId){
-    if(!compose.trim()) return;
-    // Extract hashtags from body text
-    const tagMatches=compose.match(/#([a-zA-Z0-9_]+)/g)||[];
-    const extractedTags=[...new Set(tagMatches.map(t=>t.slice(1)))];
-    // Strip hashtags from body — keep body clean, tags go to tags array
-    const cleanBody=compose.replace(/#([a-zA-Z0-9_]+)/g,"").replace(/\s{2,}/g," ").trim();
-    const newPost={id:Date.now(),authorId:"you",author:"Your Name",initials:"YO",role:"Member",time:"now",body:cleanBody,tags:extractedTags,likes:0,comments:0,shares:0,communityId:communityId||null};
-    setPosts(p=>[newPost,...p]);
-    setCompose("");
-    if(communityId){
-      setCommunities(p=>p.map(c=>c.id===communityId?{...c,posts:c.posts+1}:c));
-    } else {
-      setTab("discover");
-    }
-    showToast("ok","Post published!");
   }
   function toggleFollow(userId){setFollowing(p=>({...p,[userId]:!p[userId]}));}
   function toggleFollowCommunity(id){setCommunities(p=>p.map(c=>c.id===id?{...c,followed:!c.followed,members:c.members+(c.followed?-1:1)}:c));}
@@ -309,14 +305,20 @@ function LinkSection({showToast,onGoToMessages}){
               <div style={{display:"flex",gap:4}}>
                 {[I.Image,I.Map,I.Globe].map((IC,i)=><button key={i} className="ib"><IC/></button>)}
               </div>
-              <button className="btn btn-p" onClick={()=>submitPost(null)} disabled={!compose.trim()}><I.Send/>Publish</button>
+              <button className="btn btn-p" onClick={()=>submitPost(null)} disabled={!compose.trim() || (!profile?.id && !user?.id)}><I.Send/>Publish</button>
             </div>
           </div>
           <div className="notice ni"><I.Info/><span>Type #hashtags anywhere in your post — they will be automatically extracted as tags when you publish.</span></div>
+          {(!profile?.id && !user?.id)&&<div className="notice ni"><I.Info/><span>Sign in to publish and interact with the community.</span></div>}
         </div>}
         {tab==="community"&&<>
           <div className="stat-row">
-            {[["👥","12,400+","Members"],["🌍","24","States"],["🏆","340","Expert Farmers"],["💬","8,900+","Posts / Month"]].map(([ic,v,l])=>(
+            {[
+              ['👥', communities.reduce((sum,c)=>sum + Number(c.members||0),0).toLocaleString(), 'Members'],
+              ['🌍', new Set(communities.map(c=>c.state).filter(Boolean)).size || 0, 'Active Regions'],
+              ['🏆', communities.length, 'Communities'],
+              ['💬', communities.reduce((sum,c)=>sum + Number(c.posts||0),0), 'Live Posts'],
+            ].map(([ic,v,l])=>(
               <div key={l} className="stat-tile"><div className="stat-ico">{ic}</div><div className="stat-v">{v}</div><div className="stat-l">{l}</div></div>
             ))}
           </div>

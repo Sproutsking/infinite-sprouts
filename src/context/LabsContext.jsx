@@ -10,7 +10,7 @@ export function useLabs() {
 
 export function LabsProvider({ children }) {
   const { user } = useAuth();
-  const [messages, setMessages] = useState([{ id: 1, me: false, text: 'Hello! I am your Sprouts AI Advisor. Ask me about crops, weather, soil health, market prices, or investment analysis.' }]);
+  const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
 
   async function sendQuestion(question) {
