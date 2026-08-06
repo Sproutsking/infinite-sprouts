@@ -8,8 +8,26 @@ import { CommentActionMenu } from '../../../popovers/CommentActionMenu.jsx';
 import PostActionMenu from '../../../popovers/PostActionMenu.jsx';
 import { createComment } from '../../../services/postService.js';
 
-function PostView({postId,highlightCommentId,posts,comments,setComments,users,liked,onToggleLike,onBack,showToast,onSave,onShare,onDeletePost,onCopyLink}){
+function formatTimeLabel(createdAt) {
+  if (!createdAt) return 'Just now';
+  const date = new Date(createdAt);
+  if (isNaN(date)) return 'Just now';
+  const diff = Date.now() - date.getTime();
+  const minute = 60 * 1000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+  if (diff < minute) return 'Just now';
+  if (diff < hour) return `${Math.floor(diff / minute)}m ago`;
+  if (diff < day) return `${Math.floor(diff / hour)}h ago`;
+  const days = Math.floor(diff / day);
+  if (days === 1) return 'Yesterday';
+  if (days < 7) return `${days}d ago`;
+  return date.toLocaleDateString();
+}
+
+function PostView({postId,highlightCommentId,posts,setPosts,comments,setComments,users,liked,onToggleLike,onBack,showToast,onSave,onShare,onDeletePost,onCopyLink}){
   const { user, profile } = useAuth();
+  const currentUserId = profile?.id || user?.id;
   const post=posts.find(p=>p.id===postId);
   const postComments=comments[postId]||[];
   const [commentText,setCommentText]=useState("");
@@ -25,7 +43,7 @@ function PostView({postId,highlightCommentId,posts,comments,setComments,users,li
   },[highlightCommentId]);
 
   if(!post) return null;
-  const author=users[post.authorId];
+  const author=users[post.authorId] || { name: 'Unknown', initials: '??', role: 'Member' };
 
   async function postComment(){
     if(!commentText.trim()) return;
@@ -36,8 +54,17 @@ function PostView({postId,highlightCommentId,posts,comments,setComments,users,li
         body: commentText.trim(),
         createdAt: new Date().toISOString(),
       });
-      const c={id:createdComment.id,authorId:createdComment.authorId||profile?.id||user?.id,text:createdComment.body||commentText.trim(),time:createdComment.createdAt?new Date(createdComment.createdAt).toLocaleDateString():"now",likes:0,replies:[]};
-      setComments(p=>({...p,[postId]:[...(p[postId]||[]),c]}));
+      const createdAt = createdComment.createdAt || createdComment.created_at || new Date().toISOString();
+      const c = {
+        id: createdComment.id,
+        authorId: createdComment.authorId || profile?.id || user?.id,
+        body: createdComment.body || commentText.trim(),
+        text: createdComment.body || commentText.trim(),
+        createdAt,
+        likes: 0,
+        replies: [],
+      };
+      setComments(p => ({ ...p, [postId]: [...(p[postId]||[]), c] }));
       setCommentText("");
       showToast("ok","Comment posted!");
     } catch (error) {
@@ -55,9 +82,18 @@ function PostView({postId,highlightCommentId,posts,comments,setComments,users,li
         body: replyText.trim(),
         createdAt: new Date().toISOString(),
       });
-      const r={id:createdReply.id,authorId:createdReply.authorId||profile?.id||user?.id,text:createdReply.body||replyText.trim(),time:createdReply.createdAt?new Date(createdReply.createdAt).toLocaleDateString():"now",likes:0};
-      setComments(p=>({...p,[postId]:(p[postId]||[]).map(c=>c.id===commentId?{...c,replies:[...(c.replies||[]),r]}:c)}));
-      setReplyText("");setReplyingTo(null);
+      const createdAt = createdReply.createdAt || createdReply.created_at || new Date().toISOString();
+      const r = {
+        id: createdReply.id,
+        authorId: createdReply.authorId || profile?.id || user?.id,
+        body: createdReply.body || replyText.trim(),
+        text: createdReply.body || replyText.trim(),
+        createdAt,
+        likes: 0,
+      };
+      setComments(p => ({ ...p, [postId]: (p[postId]||[]).map(c => c.id===commentId ? { ...c, replies: [...(c.replies||[]), r] } : c) }));
+      setReplyText("");
+      setReplyingTo(null);
       showToast("ok","Reply posted!");
     } catch (error) {
       console.error('Error creating reply', error);
@@ -77,19 +113,21 @@ function PostView({postId,highlightCommentId,posts,comments,setComments,users,li
   const CommentRow=({c,isReply,parentId})=>{
     const cUser=users[c.authorId];
     const isHighlighted=highlightCommentId===c.id;
-    const isOwner=c.authorId==="you";
+    const isOwner=String(c.authorId)===String(currentUserId);
     const isReplying=!isReply&&replyingTo===c.id;
+    const bodyText = c.body || c.text || '';
+    const commentTime = c.createdAt ? formatTimeLabel(c.createdAt) : c.time || 'Just now';
     return(
       <div className={"comment-item"+(isHighlighted?" highlight":"")} ref={isHighlighted?highlightRef:null}>
         <div className="comment-row-wrap">
           <CommentActionMenu isOwner={isOwner} onDelete={()=>isReply?deleteReply(parentId,c.id):deleteTopComment(c.id)} showToast={showToast}/>
-          <Av initials={cUser?.initials||"?"} size="sm"/>
+          <Av initials={cUser?.initials||"?"} size="sm" src={cUser?.avatarUrl}/>
           <div className="comment-body-col">
             <div className="comment-meta-row">
               <AuthorName userId={c.authorId} style={{fontSize:"12.5px",fontWeight:700}}/>
-              <span className="comment-time">· {c.time}</span>
+              <span className="comment-time">· {commentTime}</span>
             </div>
-            <div className="comment-text">{c.text}</div>
+            <div className="comment-text">{bodyText}</div>
             <div className="comment-acts-row">
               <button className={"comment-act-btn"+(commentLiked[c.id]?" liked":"")} onClick={()=>toggleCommentLike(c.id)}><I.Heart/>{(c.likes||0)+(commentLiked[c.id]?1:0)}</button>
               {!isReply&&<button className="comment-act-btn" onClick={()=>setReplyingTo(isReplying?null:c.id)}>{isReplying?<><I.X/>Cancel</>:<><I.Comment/>Reply</>}</button>}
@@ -114,12 +152,15 @@ function PostView({postId,highlightCommentId,posts,comments,setComments,users,li
 
   const commentInputRef=useRef(null);
 
+  const isOwner = String(post.authorId) === String(currentUserId);
+  const timeLabel = formatTimeLabel(post.createdAt);
+
   return(
     <div className="main">
       <div className="post-view-hd">
         <button className="ib" onClick={onBack}><I.ArrowL/></button>
         <div style={{fontWeight:700,fontSize:13,color:"var(--t1)",flex:1}}>Post</div>
-        <PostActionMenu post={post} isOwner={post.authorId==="you"} onDelete={()=>{onDeletePost&&onDeletePost();}} onCopyLink={onCopyLink} showToast={showToast}/>
+        <PostActionMenu post={post} isOwner={isOwner} onDelete={()=>{onDeletePost&&onDeletePost();}} onCopyLink={onCopyLink} showToast={showToast}/>
       </div>
       <div className="scroll" style={{padding:0}}>
         <div className="post-view-main">
@@ -127,11 +168,11 @@ function PostView({postId,highlightCommentId,posts,comments,setComments,users,li
           <div className="post-view-body">{post.body}</div>
           {post.image&&<div className="post-view-img">{post.image}</div>}
           {post.tags&&post.tags.length>0&&<div className="post-tags">{post.tags.map(t=><span key={t} className="post-tag">#{t}</span>)}</div>}
-          <div className="post-view-time">{post.time} ago · Infinite Sprouts</div>
+          <div className="post-view-time">{timeLabel} · Infinite Sprouts</div>
           <div className="post-view-stats">
             <span><b>{(comments[postId]||[]).reduce((n,c)=>n+1+(c.replies?.length||0),0)}</b> <span>Comments</span></span>
             <span><b>{post.shares}</b> <span>Shares</span></span>
-            <span><b>{post.likes+(liked[postId]?1:0)}</b> <span>Likes</span></span>
+            <span><b>{post.likes}</b> <span>Likes</span></span>
           </div>
           <div className="post-view-acts">
             <button className={"post-act"+(liked[postId]?" liked":"")} onClick={()=>onToggleLike(postId)}><I.Heart/>Like</button>

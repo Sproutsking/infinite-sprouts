@@ -2,17 +2,33 @@ import React, { useState, useRef, useEffect } from 'react';
 import I from '../../../icons/icons.jsx';
 import { Av, Modal } from '../../../components/index.jsx';
 import { useSocial } from '../../../context/SocialContext.jsx';
+import { useAuth } from '../../../context/AuthContext.jsx';
 import { AuthorTrigger, AuthorName } from '../../../popovers/ProfilePopover.jsx';
 import { CommentActionMenu } from '../../../popovers/CommentActionMenu.jsx';
 import PostActionMenu from '../../../popovers/PostActionMenu.jsx';
 
 function ProfilePage({userId,users,posts,comments,following,onToggleFollow,onDM,onBack,onGoPost,PostCardComp}){
+  const { user: authUser, profile } = useAuth();
+  const currentUserId = profile?.id || authUser?.id;
   const [tab,setTab]=useState("posts");
-  const user=users[userId];
-  const isMe=userId==="you";
-  if(!user) return null;
+  const fallbackUser = id => {
+    const stringId = String(id || '').trim();
+    return {
+      id,
+      name: stringId || 'Unknown User',
+      initials: stringId ? stringId.slice(0,2).toUpperCase() : '??',
+      role: 'Member',
+      bio: '',
+      followers: 0,
+      following: 0,
+      joined: '',
+      avatarUrl: null,
+    };
+  };
+  const user=users[userId] || fallbackUser(userId);
+  const isMe=String(userId)===String(currentUserId);
 
-  const myPosts=posts.filter(p=>p.authorId===userId);
+  const myPosts=posts.filter(p=>String(p.authorId)===String(userId));
 
   // Build replies list: every comment/reply by this user, across all posts
   const myReplies=[];
@@ -37,7 +53,7 @@ function ProfilePage({userId,users,posts,comments,following,onToggleFollow,onDM,
       <div className="scroll" style={{padding:0}}>
         <div className="profile-banner"/>
         <div className="profile-block">
-          <div className="profile-av-lg">{user.initials}</div>
+          <Av initials={user.initials} size="xl" src={user.avatarUrl} green />
           <div className="profile-name-row">
             <div className="profile-name">{user.name}</div>
             {!isMe&&(

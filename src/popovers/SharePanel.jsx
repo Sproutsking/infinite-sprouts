@@ -2,7 +2,7 @@ import React from 'react';
 import I from '../icons/icons.jsx';
 import { Av, Modal } from '../components/index.jsx';
 
-function SharePanel({open,onClose,post,users,showToast}){
+function SharePanel({open,onClose,post,users,showToast,onShare}){
   if(!post) return null;
   const recents=Object.values(users).filter(u=>u.id!=="you").slice(0,4);
   const shareVia=[
@@ -17,6 +17,10 @@ function SharePanel({open,onClose,post,users,showToast}){
   ];
   function handleShareVia(k,l){
     onClose();
+    if(onShare){
+      onShare(post, k === 'copy' ? 'copy' : 'share');
+      return;
+    }
     if(k==="copy") showToast("ok","Link copied to clipboard!");
     else showToast("ok","Opening "+l+"…");
   }

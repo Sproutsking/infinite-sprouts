@@ -57,8 +57,7 @@ function AuthorTrigger({userId,size}){
   const [open,setOpen]=useState(false);
   if(!ctx) return null;
   const {users,onSeeProfile}=ctx;
-  const user=users[userId];
-  if(!user) return null;
+  const user=users[userId] || { id:userId, name:userId || 'Unknown', initials:(userId&&userId.toString().slice(0,2).toUpperCase())||'??', role:'Member' };
   const isMe=userId==="you";
   return(
     <div className="profile-pop-anchor">

@@ -34,7 +34,7 @@ function CommunityFeed({community,posts,onBack,onToggleFollow,onToggleNotif,Post
         id: savedPost.id,
         authorId: savedPost.authorId || user.id,
         body: savedPost.body || cleanBody,
-        time: savedPost.createdAt ? new Date(savedPost.createdAt).toLocaleDateString() : 'now',
+        createdAt: savedPost.createdAt || savedPost.created_at || new Date().toISOString(),
         tags: savedPost.tags || extractedTags,
         likes: savedPost.likes || 0,
         comments: savedPost.comments || 0,

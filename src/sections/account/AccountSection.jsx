@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import I from '../../icons/icons.jsx';
 import { Av, Modal, Toggle } from '../../components/index.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
@@ -24,6 +24,7 @@ function AccountSection({ theme, setTheme, showToast, onOpenNotifications, onOpe
   const [avatarFile, setAvatarFile] = useState(null);
   const [avatarPreview, setAvatarPreview] = useState(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     if (!profile) return;
@@ -69,6 +70,7 @@ function AccountSection({ theme, setTheme, showToast, onOpenNotifications, onOpe
       await refreshProfile();
       setAvatarFile(null);
       setAvatarPreview(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
       showToast('ok', 'Profile image updated!');
     } catch (error) {
       console.error('Avatar upload error', error);
@@ -120,13 +122,15 @@ function AccountSection({ theme, setTheme, showToast, onOpenNotifications, onOpe
       </div>
       <div className="scroll">
         {tab === 'profile' && <>
+          <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={e => handleAvatarChange(e.target.files?.[0])} />
           <div className="acc-hero">
             <div className="ah">
-              <div className="ah-av">{profile?.initials || 'YO'}</div>
+              <Av initials={profile?.initials || 'YO'} size="xl" src={avatarPreview || profile?.avatar_url} green />
               <div><div style={{ fontFamily: 'var(--fd)', fontSize: 18, fontWeight: 900, marginBottom: 2 }}>{profile?.full_name || user?.user_metadata?.full_name || 'Your Name'}</div><div style={{ fontSize: 11.5, opacity: .7 }}>{profile?.role || 'Farmer and Investor · Nigeria'}</div><div style={{ fontSize: 12, opacity: .6, marginTop: 2 }}>{user?.email || 'you@example.com'}</div></div>
             </div>
             <div style={{ position: 'relative', zIndex: 1, marginTop: 14, display: 'flex', gap: 7, flexWrap: 'wrap' }}>
-              <button className="wc-btn" onClick={() => document.querySelector('input[type=file]')?.click()}><I.Edit/>Upload avatar</button>
+              <button className="wc-btn" onClick={() => fileInputRef.current?.click()}><I.Edit/>Upload avatar</button>
+              {avatarFile && <button className="wc-btn" onClick={saveAvatar} disabled={uploadingAvatar}><I.Check/>{uploadingAvatar ? ' Saving...' : 'Save avatar'}</button>}
               <button className="wc-btn"><I.Shield/>Verified</button>
             </div>
           </div>

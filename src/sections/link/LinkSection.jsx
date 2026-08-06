@@ -13,11 +13,12 @@ import ProfilePage from './pages/ProfilePage.jsx';
 import PostView from './pages/PostView.jsx';
 import CommunityFeed from './pages/CommunityFeed.jsx';
 import { fetchProfiles } from '../../services/supabaseService.js';
-import { fetchPosts, fetchCommentsForPosts, createPost, togglePostLike } from '../../services/postService.js';
+import { fetchPosts, fetchCommentsForPosts, createPost, togglePostLike, sharePost } from '../../services/postService.js';
 import { fetchCommunities, createCommunity, toggleCommunityFollow as toggleCommunityFollowService, toggleCommunityNotif as toggleCommunityNotifService } from '../../services/socialService.js';
 
 function LinkSection({showToast,onGoToMessages}){
   const { user, profile } = useAuth();
+  const currentUserId = profile?.id || user?.id;
   const [page,setPage]=useState({type:"feed"});
   const [tab,setTab]=useState("discover");
   const [posts,setPosts]=useState([]);
@@ -58,26 +59,56 @@ function LinkSection({showToast,onGoToMessages}){
           fetchPosts(),
         ]);
 
+        const getInitials = name => (name||'').split(' ').filter(Boolean).slice(0,2).map(p=>p[0]).join('').toUpperCase() || 'US';
+        const makeFallbackUser = id => {
+          const stringId = String(id || '').trim();
+          return {
+            id,
+            name: stringId || 'Unknown User',
+            initials: stringId ? stringId.slice(0,2).toUpperCase() : '??',
+            role: 'Member',
+            bio: '',
+            followers: 0,
+            following: 0,
+            joined: '',
+            avatarUrl: null,
+          };
+        };
         const profileMap = profiles.reduce((acc, item) => {
-          const fullName = item.full_name || item.name || item.email || 'Sprouts User';
+          const fullName = (item.full_name || item.name || item.email || 'Sprouts User').toString().trim();
           acc[item.id] = {
             id: item.id,
             name: fullName,
-            initials: item.initials || (fullName.split(' ').slice(0,2).map(p=>p[0]).join('').toUpperCase()) || 'US',
+            initials: item.initials || getInitials(fullName),
             role: item.role || 'Member',
             bio: item.bio || '',
             followers: item.followers || 0,
             following: item.following || 0,
             joined: item.joined || '',
+            avatarUrl: item.avatar_url || item.avatarUrl || item.photo_url || null,
           };
           return acc;
         }, {});
+        if (profile?.id) {
+          const currentName = (profile.full_name || profile.email || 'You').toString().trim();
+          profileMap[profile.id] = {
+            id: profile.id,
+            name: currentName,
+            initials: profile.initials || getInitials(currentName),
+            role: profile.role || 'Member',
+            bio: profile.bio || '',
+            followers: profile.followers || 0,
+            following: profile.following || 0,
+            joined: profile.joined || '',
+            avatarUrl: profile.avatar_url || null,
+          };
+        }
 
         const normalizedPosts = postRows.map(p => ({
           id: p.id,
-          authorId: p.author_id || p.authorId || p.user_id || 'unknown',
+          authorId: p.author_id || p.authorId || p.user_id || null,
           body: p.body || p.content || '',
-          time: p.created_at ? new Date(p.created_at).toLocaleDateString() : 'now',
+          createdAt: p.created_at || p.createdAt || null,
           tags: p.tags || [],
           likes: p.likes || 0,
           comments: p.comments || 0,
@@ -85,6 +116,26 @@ function LinkSection({showToast,onGoToMessages}){
           communityId: p.community_id || p.communityId || null,
           image: p.image || p.media || null,
         }));
+
+        normalizedPosts.forEach(post => {
+          if (post.authorId && !profileMap[post.authorId]) {
+            profileMap[post.authorId] = makeFallbackUser(post.authorId);
+          }
+        });
+
+        const commentMap = await fetchCommentsForPosts(normalizedPosts.map(p => p.id));
+        Object.values(commentMap).flat().forEach(comment => {
+          const authorId = comment.authorId || comment.author_id;
+          if (authorId && !profileMap[authorId]) {
+            profileMap[authorId] = makeFallbackUser(authorId);
+          }
+          (comment.replies || []).forEach(reply => {
+            const replyAuthorId = reply.authorId || reply.author_id;
+            if (replyAuthorId && !profileMap[replyAuthorId]) {
+              profileMap[replyAuthorId] = makeFallbackUser(replyAuthorId);
+            }
+          });
+        });
 
         setUsers(profileMap);
         setCommunities(comms.map(c => ({
@@ -98,8 +149,6 @@ function LinkSection({showToast,onGoToMessages}){
           desc: c.desc || '',
         })));
         setPosts(normalizedPosts);
-
-        const commentMap = await fetchCommentsForPosts(normalizedPosts.map(p => p.id));
         setComments(commentMap);
         setFollowing(Object.keys(profileMap).reduce((acc, key) => ({ ...acc, [key]: false }), {}));
 
@@ -120,12 +169,16 @@ function LinkSection({showToast,onGoToMessages}){
       }
     }
     loadFeed();
-  }, [showToast]);
+  }, [showToast, profile, user]);
 
   async function toggleLike(id){
+    if(!currentUserId){
+      showToast('error','Please sign in to like posts.');
+      return;
+    }
     const isLiked = !!liked[id];
     try {
-      const updatedPost = await togglePostLike(id, profile?.id || user?.id, isLiked);
+      const updatedPost = await togglePostLike(id, currentUserId, isLiked);
       setLiked(p=>({...p,[id]:!isLiked}));
       setPosts(p=>p.map(x=>x.id===id?{...x, likes: updatedPost.likes || 0}:x));
     } catch (error) {
@@ -147,7 +200,7 @@ function LinkSection({showToast,onGoToMessages}){
 
   async function submitPost(communityId){
     if(!compose.trim()) return;
-    if(!profile?.id && !user?.id){
+    if(!currentUserId){
       showToast('error','Please sign in to publish posts.');
       return;
     }
@@ -169,7 +222,7 @@ function LinkSection({showToast,onGoToMessages}){
         id: newPost.id,
         authorId: newPost.authorId || profile?.id || user?.id,
         body: newPost.body || cleanBody,
-        time: newPost.createdAt ? new Date(newPost.createdAt).toLocaleDateString() : 'now',
+        createdAt: newPost.createdAt || newPost.created_at || new Date().toISOString(),
         tags: newPost.tags || extractedTags,
         likes: newPost.likes || 0,
         comments: 0,
@@ -194,6 +247,10 @@ function LinkSection({showToast,onGoToMessages}){
   async function submitCommunityRequest(){
     if(!newCommunityName.trim()){
       showToast('error','Community name is required.');
+      return;
+    }
+    if(!currentUserId){
+      showToast('error','Please sign in to create a community.');
       return;
     }
     setCreatingCommunity(true);
@@ -230,13 +287,35 @@ function LinkSection({showToast,onGoToMessages}){
     const nextFollow = !current.followed;
     try {
       const updated = await toggleCommunityFollowService(id, nextFollow);
-      setCommunities(p=>p.map(c=>c.id===id?{...c,...updated,followed:nextFollow,members:(c.members||(c.followed?1:0)) + (nextFollow?1:-1)}:c));
+      setCommunities(p=>p.map(c=>c.id===id?{...c,...updated,followed:nextFollow,members:Math.max(0,(c.members||0) + (nextFollow?1:-1))}:c));
       showToast('ok', nextFollow ? 'Following community.' : 'Unfollowed community.');
     } catch (error) {
       console.error('Community follow error', error);
       showToast('error','Unable to update community follow status.');
     }
   }
+  async function handleShare(post, method){
+    if(!post) return;
+    if(!currentUserId){
+      showToast('error','Please sign in to share posts.');
+      return;
+    }
+    try {
+      if(method === 'copy'){
+        const url = `${window.location.origin}${window.location.pathname}?post=${post.id}`;
+        await navigator.clipboard.writeText(url);
+        showToast('ok','Post link copied to clipboard!');
+        return;
+      }
+      const { post: updatedPost } = await sharePost(post.id, currentUserId, method || 'share');
+      setPosts(p=>p.map(x=>x.id===post.id?{...x, shares: updatedPost.shares || (x.shares || 0) + 1}:x));
+      showToast('ok','Post shared!');
+    } catch (error) {
+      console.error('Error sharing post', error);
+      showToast('error', 'Unable to share post.');
+    }
+  }
+
   async function toggleNotif(id){
     const current = communities.find(c=>c.id===id);
     if(!current) return;
@@ -289,7 +368,7 @@ function LinkSection({showToast,onGoToMessages}){
   });
 
   function PostCard({p}){
-    const isOwner=p.authorId==="you";
+    const isOwner=String(p.authorId)===String(currentUserId);
     return(
       <div className={"post-card"+(p.image?" has-media":"")}>
         <div className="post-hd">
@@ -314,7 +393,7 @@ function LinkSection({showToast,onGoToMessages}){
         </div>
         {p.image&&p.tags&&p.tags.length>0&&<div className="post-tags">{p.tags.map(t=><span key={t} className="post-tag">#{t}</span>)}</div>}
         <div className="post-acts">
-          <button className={"post-act"+(liked[p.id]?" liked":"")} onClick={()=>toggleLike(p.id)}><I.Heart/>{p.likes+(liked[p.id]?1:0)}</button>
+          <button className={"post-act"+(liked[p.id]?" liked":"")} onClick={()=>toggleLike(p.id)}><I.Heart/>{p.likes}</button>
           <button className="post-act" onClick={()=>goPost(p.id)}><I.Comment/>{(comments[p.id]||[]).reduce((n,c)=>n+1+(c.replies?.length||0),0)}</button>
           <button className="post-act" onClick={e=>{e.stopPropagation();setShareOpen(p);}}><I.Share/>{p.shares}</button>
           <button className="post-act post-act-save" onClick={e=>{e.stopPropagation();setSaveOpen(p);}}><I.Bookmark/></button>
@@ -328,7 +407,7 @@ function LinkSection({showToast,onGoToMessages}){
     return <SocialCtx.Provider value={socialCtxValue}><ProfilePage userId={page.userId} users={users} posts={posts} comments={comments} following={following} onToggleFollow={toggleFollow} onDM={handleDM} onBack={goFeed} onGoPost={goPost} PostCardComp={PostCard}/></SocialCtx.Provider>;
   }
   if(page.type==="post"){
-    return <SocialCtx.Provider value={socialCtxValue}><PostView postId={page.postId} highlightCommentId={page.highlightCommentId} posts={posts} comments={comments} setComments={setComments} users={users} liked={liked} onToggleLike={toggleLike} onBack={goFeed} showToast={showToast} onSave={p=>setSaveOpen(p)} onShare={p=>setShareOpen(p)} onDeletePost={()=>{showToast("ok","Post deleted.");goFeed();}} onCopyLink={copyPostLink}/></SocialCtx.Provider>;
+    return <SocialCtx.Provider value={socialCtxValue}><PostView postId={page.postId} highlightCommentId={page.highlightCommentId} posts={posts} setPosts={setPosts} comments={comments} setComments={setComments} users={users} liked={liked} onToggleLike={toggleLike} onBack={goFeed} showToast={showToast} onSave={p=>setSaveOpen(p)} onShare={handleShare} onDeletePost={()=>{showToast("ok","Post deleted.");goFeed();}} onCopyLink={copyPostLink}/></SocialCtx.Provider>;
   }
   if(page.type==="community"){
     const community=communities.find(c=>c.id===page.communityId);
@@ -458,7 +537,7 @@ function LinkSection({showToast,onGoToMessages}){
       </Modal>
 
       <SaveFolderPanel open={!!saveOpen} onClose={()=>setSaveOpen(null)} post={saveOpen} savedMap={savedMap} onToggleSave={toggleSave} showToast={showToast}/>
-      <SharePanel open={!!shareOpen} onClose={()=>setShareOpen(null)} post={shareOpen} users={users} showToast={showToast}/>
+      <SharePanel open={!!shareOpen} onClose={()=>setShareOpen(null)} post={shareOpen} users={users} showToast={showToast} onShare={handleShare}/>
     </div>
     </SocialCtx.Provider>
   );

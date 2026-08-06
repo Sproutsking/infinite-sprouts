@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import CSS from './styles/global.css.js';
 import I from './icons/icons.jsx';
 import { Toasts, Toggle } from './components/index.jsx';
+import Sidebar from './components/Sidebar.jsx';
 import { fmt } from './utils/helpers.js';
 import { useAuth } from './context/AuthContext.jsx';
 import { useWallet, useNotifications } from './context/serviceIndex.jsx';
@@ -44,7 +45,7 @@ export default function App(){
     el.textContent=CSS;
     document.head.appendChild(el);
     return()=>document.getElementById('sprouts-v4')?.remove();
-  },[]);
+  },[CSS]);
 
   useEffect(()=>{document.documentElement.setAttribute('data-theme',theme);},[theme]);
 
@@ -149,21 +150,7 @@ export default function App(){
         </div>
       </header>
 
-      <nav className='sidebar'>
-        <div className='nav-lbl'>Navigate</div>
-        {navItems.map(item=>(
-          <button key={item.k} className={'nav-item'+(section===item.k?' on':'')} onClick={()=>setSection(item.k)}>
-            <span className='nav-ico-wrap'><item.ic/></span>
-            <span className='nav-item-text'>{item.l}</span>
-            {item.badge&&<span className='nav-badge'>{item.badge}</span>}
-          </button>
-        ))}
-        <div className='nav-spacer'/>
-        <div className='nav-div'/>
-        <button className={'nav-item nav-item-account'+(section==='account'?' on':'')} onClick={()=>setSection('account')}>
-          <span className='nav-ico-wrap'><I.User/></span><span className='nav-item-text'>Account</span>
-        </button>
-      </nav>
+      <Sidebar navItems={navItems} section={section} setSection={setSection} />
 
       {section==='link'&&<LinkSection showToast={toast} onGoToMessages={()=>setSection('messages')}/>} 
       {section==='farm'&&<FarmSection walletIST={walletIST} walletNaira={walletNaira} onSpend={spend} showToast={toast} listOpen={farmListOpen} setListOpen={setFarmListOpen} activeFarmTab={farmActiveTab} setActiveFarmTab={setFarmActiveTab}/>}
