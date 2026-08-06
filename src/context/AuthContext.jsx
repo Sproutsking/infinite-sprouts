@@ -212,9 +212,71 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
-  const signIn = useCallback(async () => {
-    await signInWithGoogle();
-  }, [signInWithGoogle]);
+  const signInWithX = useCallback(async () => {
+    setLoading(true);
+    setStatus('loading');
+    setError('');
+
+    const redirectTo = import.meta.env.VITE_SUPABASE_REDIRECT_URL || window.location.origin + window.location.pathname;
+    const { error: signInError } = await supabase.auth.signInWithOAuth({
+      provider: 'twitter',
+      options: {
+        redirectTo,
+        queryParams: { prompt: 'select_account' },
+      },
+    });
+
+    if (signInError) {
+      console.error('X sign in error:', signInError);
+      setStatus('error');
+      setError(signInError.message || 'X sign-in failed.');
+      setLoading(false);
+    }
+  }, []);
+
+  const signInWithDiscord = useCallback(async () => {
+    setLoading(true);
+    setStatus('loading');
+    setError('');
+
+    const redirectTo = import.meta.env.VITE_SUPABASE_REDIRECT_URL || window.location.origin + window.location.pathname;
+    const { error: signInError } = await supabase.auth.signInWithOAuth({
+      provider: 'discord',
+      options: {
+        redirectTo,
+        queryParams: { prompt: 'select_account' },
+      },
+    });
+
+    if (signInError) {
+      console.error('Discord sign in error:', signInError);
+      setStatus('error');
+      setError(signInError.message || 'Discord sign-in failed.');
+      setLoading(false);
+    }
+  }, []);
+
+  const signInWithFacebook = useCallback(async () => {
+    setLoading(true);
+    setStatus('loading');
+    setError('');
+
+    const redirectTo = import.meta.env.VITE_SUPABASE_REDIRECT_URL || window.location.origin + window.location.pathname;
+    const { error: signInError } = await supabase.auth.signInWithOAuth({
+      provider: 'facebook',
+      options: {
+        redirectTo,
+        queryParams: { prompt: 'select_account' },
+      },
+    });
+
+    if (signInError) {
+      console.error('Facebook sign in error:', signInError);
+      setStatus('error');
+      setError(signInError.message || 'Facebook sign-in failed.');
+      setLoading(false);
+    }
+  }, []);
 
   const signOut = useCallback(async () => {
     setLoading(true);
@@ -250,8 +312,10 @@ export function AuthProvider({ children }) {
     loading,
     status,
     error,
-    signIn,
     signInWithGoogle,
+    signInWithX,
+    signInWithDiscord,
+    signInWithFacebook,
     signOut,
     refreshProfile,
     isAuthenticated: !!user,

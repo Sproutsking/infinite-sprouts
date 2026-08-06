@@ -1,7 +1,6 @@
 import supabase from '../lib/supabaseClient.js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const functionsUrl = import.meta.env.VITE_SUPABASE_FUNCTIONS_URL || (supabaseUrl?.replace('.supabase.co', '.functions.supabase.co') || '');
+const functionsUrl = import.meta.env.VITE_SUPABASE_FUNCTIONS_URL || '';
 
 async function callEdgeFunction(path, payload) {
   if (!functionsUrl) throw new Error('Supabase functions URL is not configured.');

@@ -60,9 +60,16 @@ export async function createPost(payload) {
 
   const model = PostModel.fromPayload({ ...payload, author_id: authorId, authorId });
   const bodyPayload = PostModel.toPayload(model);
+
   if (functionsUrl) {
-    return await callEdgeFunction('create-post', bodyPayload);
+    try {
+      const response = await callEdgeFunction('create-post', bodyPayload);
+      return PostModel.fromPayload(response);
+    } catch (error) {
+      console.warn('Post edge function failed, falling back to direct Supabase insert.', error);
+    }
   }
+
   const { data, error } = await supabase.from('posts').insert(bodyPayload).select('*').single();
   if (error) throw error;
   return PostModel.fromPayload(data);

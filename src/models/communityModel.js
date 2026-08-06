@@ -3,7 +3,7 @@ export class CommunityModel {
     return {
       id: payload.id || null,
       name: payload.name || payload.full_name || '',
-      description: payload.description || payload.desc || '',
+      desc: payload.desc || payload.description || '',
       members: Number(payload.members || payload.member_count || 0),
       posts: Number(payload.posts || 0),
       followed: Boolean(payload.followed),
@@ -16,7 +16,7 @@ export class CommunityModel {
   static toPayload(model = {}) {
     return {
       name: model.name || '',
-      description: model.description || '',
+      desc: model.desc || model.description || '',
       members: Number(model.members || 0),
       posts: Number(model.posts || 0),
       followed: Boolean(model.followed),

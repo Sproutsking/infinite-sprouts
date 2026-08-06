@@ -14,7 +14,7 @@ import PostView from './pages/PostView.jsx';
 import CommunityFeed from './pages/CommunityFeed.jsx';
 import { fetchProfiles } from '../../services/supabaseService.js';
 import { fetchPosts, fetchCommentsForPosts, createPost, togglePostLike } from '../../services/postService.js';
-import { fetchCommunities } from '../../services/socialService.js';
+import { fetchCommunities, createCommunity, toggleCommunityFollow as toggleCommunityFollowService, toggleCommunityNotif as toggleCommunityNotifService } from '../../services/socialService.js';
 
 function LinkSection({showToast,onGoToMessages}){
   const { user, profile } = useAuth();
@@ -28,6 +28,11 @@ function LinkSection({showToast,onGoToMessages}){
   const [following,setFollowing]=useState({});
   const [compose,setCompose]=useState("");
   const [reqCommOpen,setReqCommOpen]=useState(false);
+  const [newCommunityName,setNewCommunityName]=useState('');
+  const [newCommunityFocus,setNewCommunityFocus]=useState('');
+  const [newCommunityDesc,setNewCommunityDesc]=useState('');
+  const [newCommunityIcon,setNewCommunityIcon]=useState('🌱');
+  const [creatingCommunity,setCreatingCommunity]=useState(false);
   const [savedMap,setSavedMap]=useState({});
   const [saveOpen,setSaveOpen]=useState(null);
   const [shareOpen,setShareOpen]=useState(null);
@@ -97,6 +102,16 @@ function LinkSection({showToast,onGoToMessages}){
         const commentMap = await fetchCommentsForPosts(normalizedPosts.map(p => p.id));
         setComments(commentMap);
         setFollowing(Object.keys(profileMap).reduce((acc, key) => ({ ...acc, [key]: false }), {}));
+
+          const params = new URLSearchParams(window.location.search);
+        const resolveId = value => value && /^\d+$/.test(value) ? Number(value) : value;
+        if (params.has('post')) {
+          setPage({ type: 'post', postId: resolveId(params.get('post')), highlightCommentId: resolveId(params.get('comment')) || null });
+        } else if (params.has('profile')) {
+          setPage({ type: 'profile', userId: resolveId(params.get('profile')) });
+        } else if (params.has('community')) {
+          setPage({ type: 'community', communityId: resolveId(params.get('community')) });
+        }
       } catch (error) {
         console.error('Error loading link feed', error);
         showToast('error', 'Unable to load social feed.');
@@ -116,6 +131,17 @@ function LinkSection({showToast,onGoToMessages}){
     } catch (error) {
       console.error('Error toggling like', error);
       showToast('error','Unable to update like.');
+    }
+  }
+
+  async function copyPostLink(post){
+    const url = `${window.location.origin}${window.location.pathname}?post=${post.id}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      showToast('ok','Post link copied to clipboard!');
+    } catch (error) {
+      console.warn('Clipboard copy failed', error);
+      showToast('info','Copy this link: ' + url);
     }
   }
 
@@ -164,9 +190,66 @@ function LinkSection({showToast,onGoToMessages}){
       showToast('error','Unable to publish post.');
     }
   }
+
+  async function submitCommunityRequest(){
+    if(!newCommunityName.trim()){
+      showToast('error','Community name is required.');
+      return;
+    }
+    setCreatingCommunity(true);
+    try {
+      const community = await createCommunity({
+        name: newCommunityName.trim(),
+        desc: [newCommunityFocus.trim(), newCommunityDesc.trim()].filter(Boolean).join(' · '),
+        ico: newCommunityIcon,
+        members: 1,
+        posts: 0,
+        followed: true,
+        notif: false,
+        count: 0,
+      });
+      setCommunities(prev => [community, ...prev]);
+      setNewCommunityName('');
+      setNewCommunityFocus('');
+      setNewCommunityDesc('');
+      setNewCommunityIcon('🌱');
+      setReqCommOpen(false);
+      setPage({ type: 'community', communityId: community.id });
+      showToast('ok','Community created successfully!');
+    } catch (error) {
+      console.error('Community create error', error);
+      showToast('error','Unable to create community.');
+    } finally {
+      setCreatingCommunity(false);
+    }
+  }
   function toggleFollow(userId){setFollowing(p=>({...p,[userId]:!p[userId]}));}
-  function toggleFollowCommunity(id){setCommunities(p=>p.map(c=>c.id===id?{...c,followed:!c.followed,members:c.members+(c.followed?-1:1)}:c));}
-  function toggleNotif(id){setCommunities(p=>p.map(c=>c.id===id?{...c,notif:!c.notif}:c));}
+  async function toggleFollowCommunity(id){
+    const current = communities.find(c=>c.id===id);
+    if(!current) return;
+    const nextFollow = !current.followed;
+    try {
+      const updated = await toggleCommunityFollowService(id, nextFollow);
+      setCommunities(p=>p.map(c=>c.id===id?{...c,...updated,followed:nextFollow,members:(c.members||(c.followed?1:0)) + (nextFollow?1:-1)}:c));
+      showToast('ok', nextFollow ? 'Following community.' : 'Unfollowed community.');
+    } catch (error) {
+      console.error('Community follow error', error);
+      showToast('error','Unable to update community follow status.');
+    }
+  }
+  async function toggleNotif(id){
+    const current = communities.find(c=>c.id===id);
+    if(!current) return;
+    const nextNotif = !current.notif;
+    try {
+      const updated = await toggleCommunityNotifService(id, nextNotif);
+      setCommunities(p=>p.map(c=>c.id===id?{...c,...updated,notif:nextNotif}:c));
+      showToast('ok', nextNotif ? 'Notifications enabled.' : 'Notifications disabled.');
+    } catch (error) {
+      console.error('Community notif error', error);
+      showToast('error','Unable to update notification settings.');
+    }
+  }
   function toggleSave(postId,folderId){
     setSavedMap(p=>{
       const cur=p[postId]||[];
@@ -219,7 +302,7 @@ function LinkSection({showToast,onGoToMessages}){
                 </span>
               </CommunityTrigger>
             )}
-            <PostActionMenu post={p} isOwner={isOwner} onDelete={()=>showToast("ok","Post deleted.")} showToast={showToast}/>
+            <PostActionMenu post={p} isOwner={isOwner} onDelete={()=>showToast("ok","Post deleted.")} onCopyLink={copyPostLink} showToast={showToast}/>
           </div>
         </div>
         <div className="post-content" onClick={()=>goPost(p.id)} style={{cursor:"pointer"}}>
@@ -245,12 +328,15 @@ function LinkSection({showToast,onGoToMessages}){
     return <SocialCtx.Provider value={socialCtxValue}><ProfilePage userId={page.userId} users={users} posts={posts} comments={comments} following={following} onToggleFollow={toggleFollow} onDM={handleDM} onBack={goFeed} onGoPost={goPost} PostCardComp={PostCard}/></SocialCtx.Provider>;
   }
   if(page.type==="post"){
-    return <SocialCtx.Provider value={socialCtxValue}><PostView postId={page.postId} highlightCommentId={page.highlightCommentId} posts={posts} comments={comments} setComments={setComments} users={users} liked={liked} onToggleLike={toggleLike} onBack={goFeed} showToast={showToast} onSave={p=>setSaveOpen(p)} onShare={p=>setShareOpen(p)} onDeletePost={()=>{showToast("ok","Post deleted.");goFeed();}}/></SocialCtx.Provider>;
+    return <SocialCtx.Provider value={socialCtxValue}><PostView postId={page.postId} highlightCommentId={page.highlightCommentId} posts={posts} comments={comments} setComments={setComments} users={users} liked={liked} onToggleLike={toggleLike} onBack={goFeed} showToast={showToast} onSave={p=>setSaveOpen(p)} onShare={p=>setShareOpen(p)} onDeletePost={()=>{showToast("ok","Post deleted.");goFeed();}} onCopyLink={copyPostLink}/></SocialCtx.Provider>;
   }
   if(page.type==="community"){
     const community=communities.find(c=>c.id===page.communityId);
     const commPosts=posts.filter(p=>p.communityId===page.communityId);
-    return <SocialCtx.Provider value={socialCtxValue}><CommunityFeed community={community} posts={commPosts} onBack={goFeed} onToggleFollow={toggleFollowCommunity} onToggleNotif={toggleNotif} PostCardComp={PostCard}/></SocialCtx.Provider>;
+    return <SocialCtx.Provider value={socialCtxValue}><CommunityFeed community={community} posts={commPosts} onBack={goFeed} onToggleFollow={toggleFollowCommunity} onToggleNotif={toggleNotif} PostCardComp={PostCard} onNewPost={(newPost) => {
+      setCommunities(prev => prev.map(c => c.id === community.id ? { ...c, posts: (c.posts || 0) + 1 } : c));
+      setPosts(prev => [newPost, ...prev]);
+    }}/></SocialCtx.Provider>;
   }
 
   return(
@@ -332,16 +418,12 @@ function LinkSection({showToast,onGoToMessages}){
               <div key={c.id} className="comm-card" onClick={()=>goCommunity(c.id)}>
                 <div className="comm-banner" style={{background:c.bg}}>
                   <span style={{fontSize:34,position:"relative",zIndex:2}}>{c.ico}</span>
-                  <button className={"comm-notif-btn"+(c.notif?" active":"")} onClick={e=>{e.stopPropagation();toggleNotif(c.id);}}>
-                    <I.Bell/>
-                    {c.count>0&&<span className="comm-notif-count">{c.count}</span>}
-                  </button>
                 </div>
                 <div className="comm-body">
                   <div className="comm-name">{c.name}</div>
                   <div className="comm-meta">{c.members.toLocaleString()} members · {c.posts} posts</div>
-                  <button className={"btn btn-sm btn-full"+(c.followed?" btn-g":" btn-p")} onClick={e=>{e.stopPropagation();toggleFollowCommunity(c.id);}}>
-                    {c.followed?"Following":"Follow"}
+                  <button className={"btn btn-sm btn-full" + (c.followed ? " btn-g" : " btn-p")} onClick={e=>{e.stopPropagation(); toggleFollowCommunity(c.id);}}>
+                    {c.followed ? "Following" : "Follow"}
                   </button>
                 </div>
               </div>
@@ -366,17 +448,13 @@ function LinkSection({showToast,onGoToMessages}){
       </div>
 
       {/* Request community */}
-      <Modal open={reqCommOpen} onClose={()=>setReqCommOpen(false)} title="Create a Community" sheet
-        footer={<><button className="btn btn-g" onClick={()=>setReqCommOpen(false)}>Cancel</button><button className="btn btn-p" onClick={()=>{setReqCommOpen(false);showToast("ok","Community request submitted for review!");}}><I.Check/>Submit Request</button></>}>
-        <div className="notice nw"><I.Info/><span>Communities are reviewed by Sprouts admins before going live. Approval usually takes 24–48 hours.</span></div>
-        <div className="form-g"><label className="label">Community Name</label><input className="field" placeholder="e.g. Nigerian Maize Growers"/></div>
-        <div className="form-g"><label className="label">Focus Area</label><input className="field" placeholder="e.g. Maize, Irrigation, AgriTech…"/></div>
-        <div className="form-g"><label className="label">Visibility</label>
-          {[{k:"public",l:"Public",s:"Anyone can join and view posts"},{k:"private",l:"Private",s:"Invite-only, posts hidden from non-members"}].map(v=>(
-            <div key={v.k} className="pay-opt" style={{marginBottom:7}}><div style={{display:"flex",alignItems:"center",gap:10}}><div className="pay-radio"/><div><div style={{fontWeight:600,fontSize:12.5,color:"var(--t1)"}}>{v.l}</div><div style={{fontSize:11,color:"var(--t4)"}}>{v.s}</div></div></div></div>
-          ))}
-        </div>
-        <div className="form-g"><label className="label">Description</label><textarea className="field textarea" placeholder="What is this community about?"/></div>
+      <Modal open={reqCommOpen} onClose={()=>{setReqCommOpen(false);setNewCommunityName('');setNewCommunityDesc('');setNewCommunityIcon('🌱');}} title="Create a Community" sheet
+        footer={<><button className="btn btn-g" onClick={()=>{setReqCommOpen(false);setNewCommunityName('');setNewCommunityDesc('');setNewCommunityIcon('🌱');}}>Cancel</button><button className="btn btn-p" onClick={submitCommunityRequest} disabled={creatingCommunity||!newCommunityName.trim()}><I.Check/>{creatingCommunity ? 'Creating...' : 'Create Community'}</button></>}>
+        <div className="notice nw"><I.Info/><span>Communities are live immediately. Create one and start sharing with your members.</span></div>
+        <div className="form-g"><label className="label">Community Name</label><input className="field" placeholder="e.g. Nigerian Maize Growers" value={newCommunityName} onChange={e=>setNewCommunityName(e.target.value)}/></div>
+        <div className="form-g"><label className="label">Focus Area</label><input className="field" placeholder="e.g. Maize, Irrigation, AgriTech…" value={newCommunityFocus} onChange={e=>setNewCommunityFocus(e.target.value)}/></div>
+        <div className="form-g"><label className="label">Community Icon</label><input className="field" placeholder="Emoji icon" value={newCommunityIcon} onChange={e=>setNewCommunityIcon(e.target.value)}/></div>
+        <div className="form-g"><label className="label">Description</label><textarea className="field textarea" placeholder="What is this community about?" value={newCommunityDesc} onChange={e=>setNewCommunityDesc(e.target.value)}/></div>
       </Modal>
 
       <SaveFolderPanel open={!!saveOpen} onClose={()=>setSaveOpen(null)} post={saveOpen} savedMap={savedMap} onToggleSave={toggleSave} showToast={showToast}/>

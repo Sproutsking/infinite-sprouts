@@ -1,8 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import I from '../../../icons/icons.jsx';
 import { Av, Modal } from '../../../components/index.jsx';
+import { useAuth } from '../../../context/AuthContext.jsx';
+import { createPost } from '../../../services/postService.js';
 
-function CommunityFeed({community,posts,onBack,onToggleFollow,onToggleNotif,PostCardComp}){
+function CommunityFeed({community,posts,onBack,onToggleFollow,onToggleNotif,PostCardComp,onNewPost}){
+  const { user } = useAuth();
   const [composerOpen,setComposerOpen]=useState(false);
   const [compose,setCompose]=useState("");
   const [localPosts,setLocalPosts]=useState(posts);
@@ -10,19 +13,42 @@ function CommunityFeed({community,posts,onBack,onToggleFollow,onToggleNotif,Post
   // Keep localPosts in sync if parent posts prop changes
   useEffect(()=>setLocalPosts(posts),[posts]);
 
-  function submitPost(){
-    if(!compose.trim()) return;
+  async function submitPost(){
+    if(!compose.trim() || !user?.id) return;
     const tagMatches=compose.match(/#([a-zA-Z0-9_]+)/g)||[];
     const extractedTags=[...new Set(tagMatches.map(t=>t.slice(1)))];
-    const cleanBody=compose.replace(/#([a-zA-Z0-9_]+)/g,"").replace(/\s{2,}/g," ").trim();
-    const newPost={
-      id:Date.now(),authorId:"you",author:"Your Name",initials:"YO",
-      role:"Member",time:"now",body:cleanBody,tags:extractedTags,
-      likes:0,comments:0,shares:0,communityId:community.id
+    const cleanBody=compose.replace(/#([a-zA-Z0-9_]+)/g," ").replace(/\s{2,}/g," ").trim();
+    const payload = {
+      author_id: user.id,
+      body: cleanBody,
+      tags: extractedTags,
+      community_id: community.id,
+      likes: 0,
+      shares: 0,
+      created_at: new Date().toISOString(),
     };
-    setLocalPosts(p=>[newPost,...p]);
-    setCompose("");
-    setComposerOpen(false);
+
+    try {
+      const savedPost = await createPost(payload);
+      const formatted = {
+        id: savedPost.id,
+        authorId: savedPost.authorId || user.id,
+        body: savedPost.body || cleanBody,
+        time: savedPost.createdAt ? new Date(savedPost.createdAt).toLocaleDateString() : 'now',
+        tags: savedPost.tags || extractedTags,
+        likes: savedPost.likes || 0,
+        comments: savedPost.comments || 0,
+        shares: savedPost.shares || 0,
+        communityId: savedPost.communityId || community.id,
+        image: savedPost.image || null,
+      };
+      setLocalPosts(p=>[formatted,...p]);
+      setCompose("");
+      setComposerOpen(false);
+      if(onNewPost) onNewPost(formatted);
+    } catch (error) {
+      console.error('Community post create error', error);
+    }
   }
 
   const liveTags=[...new Set((compose.match(/#([a-zA-Z0-9_]+)/g)||[]).map(t=>t.slice(1)))];

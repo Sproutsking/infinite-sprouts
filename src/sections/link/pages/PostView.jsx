@@ -8,7 +8,7 @@ import { CommentActionMenu } from '../../../popovers/CommentActionMenu.jsx';
 import PostActionMenu from '../../../popovers/PostActionMenu.jsx';
 import { createComment } from '../../../services/postService.js';
 
-function PostView({postId,highlightCommentId,posts,comments,setComments,users,liked,onToggleLike,onBack,showToast,onSave,onShare,onDeletePost}){
+function PostView({postId,highlightCommentId,posts,comments,setComments,users,liked,onToggleLike,onBack,showToast,onSave,onShare,onDeletePost,onCopyLink}){
   const { user, profile } = useAuth();
   const post=posts.find(p=>p.id===postId);
   const postComments=comments[postId]||[];
@@ -119,7 +119,7 @@ function PostView({postId,highlightCommentId,posts,comments,setComments,users,li
       <div className="post-view-hd">
         <button className="ib" onClick={onBack}><I.ArrowL/></button>
         <div style={{fontWeight:700,fontSize:13,color:"var(--t1)",flex:1}}>Post</div>
-        <PostActionMenu post={post} isOwner={post.authorId==="you"} onDelete={()=>{onDeletePost&&onDeletePost();}} onCopyLink={()=>showToast("ok","Link copied!")} showToast={showToast}/>
+        <PostActionMenu post={post} isOwner={post.authorId==="you"} onDelete={()=>{onDeletePost&&onDeletePost();}} onCopyLink={onCopyLink} showToast={showToast}/>
       </div>
       <div className="scroll" style={{padding:0}}>
         <div className="post-view-main">
