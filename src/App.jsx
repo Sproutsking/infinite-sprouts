@@ -101,6 +101,39 @@ export default function App(){
     {k:'messages',l:'DM',ic:I.Msg,badge:messageBadgeText},
   ];
 
+  const railCards = {
+    link: [
+      { label: 'Network pulse', value: '12.4%', icon: <I.TrendUp/> },
+      { label: 'Posts', value: '286', icon: <I.Link/> },
+      { label: 'Communities', value: '24', icon: <I.Users/> }
+    ],
+    farm: [
+      { label: 'Market', value: '9.2%', icon: <I.Farm/> },
+      { label: 'Active farms', value: '18', icon: <I.Seedling/> },
+      { label: 'Investments', value: '₦2.4M', icon: <I.TrendUp/> }
+    ],
+    labs: [
+      { label: 'AI tasks', value: '5', icon: <I.Labs/> },
+      { label: 'Signals', value: '18', icon: <I.Bell/> },
+      { label: 'Insights', value: '92%', icon: <I.TrendUp/> }
+    ],
+    wallet: [
+      { label: 'Balance', value: `₦${fmt(walletNaira || 0)}`, icon: <I.Wallet/> },
+      { label: 'IST', value: `${fmt(walletIST || 0)} IST`, icon: <I.CreditCard/> },
+      { label: 'Transfers', value: '13', icon: <I.ArrowR/> }
+    ],
+    messages: [
+      { label: 'Unread', value: String(messageUnreadCount || 0), icon: <I.Msg/> },
+      { label: 'Active chats', value: '7', icon: <I.Users/> },
+      { label: 'Replies', value: '34', icon: <I.Bell/> }
+    ],
+    account: [
+      { label: 'Profile', value: 'Ready', icon: <I.User/> },
+      { label: 'Support', value: 'Live', icon: <I.Help/> },
+      { label: 'Security', value: 'High', icon: <I.Check/> }
+    ]
+  };
+
   return(
     <div className='shell'>
       <header className='root-hd'>
@@ -152,12 +185,56 @@ export default function App(){
 
       <Sidebar navItems={navItems} section={section} setSection={setSection} />
 
-      {section==='link'&&<LinkSection showToast={toast} onGoToMessages={()=>setSection('messages')}/>} 
-      {section==='farm'&&<FarmSection walletIST={walletIST} walletNaira={walletNaira} onSpend={spend} showToast={toast} listOpen={farmListOpen} setListOpen={setFarmListOpen} activeFarmTab={farmActiveTab} setActiveFarmTab={setFarmActiveTab}/>}
-      {section==='labs'&&<LabsSection showToast={toast}/>}
-      {section==='wallet'&&<WalletSection showToast={toast}/>}
-      {section==='messages'&&<MessagesSection showToast={toast} onUnreadChange={setMessageUnreadCount}/>} 
-      {section==='account'&&<AccountSection theme={theme} setTheme={setTheme} showToast={toast} onOpenNotifications={()=>setNotifOpen(true)} onOpenSupport={()=>setSupportOpen(true)}/>} 
+      <div className='main-shell'>
+        <div className='main'>
+          {section==='link'&&<LinkSection showToast={toast} onGoToMessages={()=>setSection('messages')}/>} 
+          {section==='farm'&&<FarmSection walletIST={walletIST} walletNaira={walletNaira} onSpend={spend} showToast={toast} listOpen={farmListOpen} setListOpen={setFarmListOpen} activeFarmTab={farmActiveTab} setActiveFarmTab={setFarmActiveTab}/>}
+          {section==='labs'&&<LabsSection showToast={toast}/>}
+          {section==='wallet'&&<WalletSection showToast={toast}/>}
+          {section==='messages'&&<MessagesSection showToast={toast} onUnreadChange={setMessageUnreadCount}/>} 
+          {section==='account'&&<AccountSection theme={theme} setTheme={setTheme} showToast={toast} onOpenNotifications={()=>setNotifOpen(true)} onOpenSupport={()=>setSupportOpen(true)}/>} 
+        </div>
+
+        <aside className='right-rail'>
+          <div className='rail-card'>
+            <div className='rail-copy'>
+              <div className='rail-title'>Overview</div>
+              <div className='rail-headline'>{sectionTitle[section] || 'Overview'}</div>
+              <div className='rail-sub'>Everything in one focused command center.</div>
+            </div>
+            {railCards[section]?.map((card, index) => (
+              <button key={`${section}-${index}`} className='rail-button' type='button'>
+                <span className='rail-label'>
+                  <span className='rail-ico'>{card.icon}</span>
+                  {card.label}
+                </span>
+                <span className='rail-value'>{card.value}</span>
+              </button>
+            ))}
+          </div>
+
+          <div className='rail-card'>
+            <div className='rail-copy'>
+              <div className='rail-title'>Quick actions</div>
+              <div className='rail-headline'>Stay ahead</div>
+              <div className='rail-sub'>Fast access to your most active workflows.</div>
+            </div>
+            <button className='rail-button' type='button'>
+              <span className='rail-label'><span className='rail-ico'><I.Plus/></span>New listing</span>
+              <span className='rail-value'>+</span>
+            </button>
+            <button className='rail-button' type='button'>
+              <span className='rail-label'><span className='rail-ico'><I.Bell/></span>Alerts</span>
+              <span className='rail-value'>{unreadCount}</span>
+            </button>
+            <button className='rail-button' type='button'>
+              <span className='rail-label'><span className='rail-ico'><I.Help/></span>Support</span>
+              <span className='rail-value'>↗</span>
+            </button>
+          </div>
+        </aside>
+      </div>
+
       {supportOpen && <SupportSection onClose={()=>setSupportOpen(false)} />}
       {notifOpen && <NotificationsSection onClose={()=>setNotifOpen(false)} />}
     </div>
