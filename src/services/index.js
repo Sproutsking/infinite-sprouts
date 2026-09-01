@@ -8,3 +8,9 @@ export * from './postService.js';
 export * from './profileService.js';
 export * from './socialService.js';
 export * from './walletService.js';
+export * from './supabaseService.js';
+
+// New marketplace services
+export { default as farmService } from './farmService.js';
+export { default as produceService } from './produceService.js';
+export { default as laborService } from './laborService.js';

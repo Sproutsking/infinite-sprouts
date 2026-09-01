@@ -369,11 +369,26 @@ function LinkSection({showToast,onGoToMessages}){
 
   function PostCard({p}){
     const isOwner=String(p.authorId)===String(currentUserId);
+    const user=users[p.authorId]||{};
     return(
-      <div className={"post-card"+(p.image?" has-media":"")}>
-        <div className="post-hd">
+      <div className="gvp-card">
+        {/* HEADER */}
+        <div className="gvp-header">
           <AuthorTrigger userId={p.authorId}/>
-          <div style={{display:"flex",alignItems:"center",gap:6,marginLeft:"auto"}}>
+          
+          <div className="gvp-hsp">
+            <div className="gvp-author-row">
+              <AuthorTrigger userId={p.authorId} clickable>
+                <button className="gvp-author-name" style={{border:"none",background:"none",padding:0,cursor:"pointer"}}>
+                  {user.name||'Unknown'}
+                </button>
+              </AuthorTrigger>
+              <span className="gvp-ts">{p.createdAt?new Date(p.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric'}):''}</span>
+            </div>
+            <div className="gvp-author-handle">@{(user.username||user.name||'unknown').toLowerCase().replace(/\s+/g,'')}</div>
+          </div>
+
+          <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:8}}>
             {p.communityId&&(
               <CommunityTrigger communityId={p.communityId}>
                 <span style={{fontSize:10.5,color:"var(--ac)",fontWeight:600,background:"var(--as)",padding:"2px 8px",borderRadius:"var(--rf)",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:3}}>
@@ -384,19 +399,33 @@ function LinkSection({showToast,onGoToMessages}){
             <PostActionMenu post={p} isOwner={isOwner} onDelete={()=>showToast("ok","Post deleted.")} onCopyLink={copyPostLink} showToast={showToast}/>
           </div>
         </div>
-        <div className="post-content" onClick={()=>goPost(p.id)} style={{cursor:"pointer"}}>
-          <div className="post-text-col">
-            <div className="post-body">{p.body}</div>
-            {!p.image&&p.tags&&p.tags.length>0&&<div className="post-tags">{p.tags.map(t=><span key={t} className="post-tag">#{t}</span>)}</div>}
-          </div>
-          {p.image&&<div className="post-img">{p.image}</div>}
+
+        {/* BODY */}
+        <div className="gvp-body" onClick={()=>goPost(p.id)} style={{cursor:"pointer"}}>
+          {p.image?
+            <div className="gvp-media-wrap">
+              <div className="gvp-cinematic"/>
+              <div className="gvp-slide show" style={{aspectRatio:"16/9"}}>
+                <div className="post-img">{p.image}</div>
+              </div>
+            </div>:
+            <div className="gvp-text-only">
+              <div className="post-body">{p.body}</div>
+            </div>
+          }
+          {p.tags&&p.tags.length>0&&(
+            <div className="post-tags">
+              {p.tags.map(t=><span key={t} className="post-tag">#{t}</span>)}
+            </div>
+          )}
         </div>
-        {p.image&&p.tags&&p.tags.length>0&&<div className="post-tags">{p.tags.map(t=><span key={t} className="post-tag">#{t}</span>)}</div>}
-        <div className="post-acts">
+
+        {/* FOOTER */}
+        <div className="gvp-footer">
           <button className={"post-act"+(liked[p.id]?" liked":"")} onClick={()=>toggleLike(p.id)}><I.Heart/>{p.likes}</button>
           <button className="post-act" onClick={()=>goPost(p.id)}><I.Comment/>{(comments[p.id]||[]).reduce((n,c)=>n+1+(c.replies?.length||0),0)}</button>
           <button className="post-act" onClick={e=>{e.stopPropagation();setShareOpen(p);}}><I.Share/>{p.shares}</button>
-          <button className="post-act post-act-save" onClick={e=>{e.stopPropagation();setSaveOpen(p);}}><I.Bookmark/></button>
+          <button className="post-act" style={{marginLeft:"auto"}} onClick={e=>{e.stopPropagation();setSaveOpen(p);}}><I.Bookmark/></button>
         </div>
       </div>
     );
