@@ -125,7 +125,13 @@ function AccountSection({ theme, setTheme, showToast, onOpenNotifications, onOpe
           <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={e => handleAvatarChange(e.target.files?.[0])} />
           <div className="acc-hero">
             <div className="ah">
-              <Av initials={profile?.initials || 'YO'} size="xl" src={avatarPreview || profile?.avatar_url} green />
+              <div style={{width:80,height:80,borderRadius:'var(--rf)',overflow:'hidden',background:'var(--as)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                {avatarPreview || profile?.avatar_url ? (
+                  <img src={avatarPreview || profile?.avatar_url} alt="Profile" style={{width:'100%',height:'100%',objectFit:'cover'}} />
+                ) : (
+                  <Av initials={profile?.initials || 'YO'} size="xl" green />
+                )}
+              </div>
               <div><div style={{ fontFamily: 'var(--fd)', fontSize: 18, fontWeight: 900, marginBottom: 2 }}>{profile?.full_name || user?.user_metadata?.full_name || 'Your Name'}</div><div style={{ fontSize: 11.5, opacity: .7 }}>{profile?.role || 'Farmer and Investor · Nigeria'}</div><div style={{ fontSize: 12, opacity: .6, marginTop: 2 }}>{user?.email || 'you@example.com'}</div></div>
             </div>
             <div style={{ position: 'relative', zIndex: 1, marginTop: 14, display: 'flex', gap: 7, flexWrap: 'wrap' }}>
@@ -157,7 +163,9 @@ function AccountSection({ theme, setTheme, showToast, onOpenNotifications, onOpe
             <textarea className="field textarea bio-textarea" value={desc} onChange={e => setDesc(e.target.value)} placeholder="Tell other farmers about your operation…" />
             <div className="bio-card-count">{desc.length} / 280</div>
           </div>
-          <button className="btn btn-p btn-full btn-lg" onClick={saveProfile} disabled={!isDirty}><I.Check/>Save Changes</button>
+          <div style={{display:'flex',gap:10,marginTop:20}}>
+            <button className="btn btn-p btn-full btn-lg" onClick={saveProfile} disabled={!isDirty}><I.Check/>Save Changes</button>
+          </div>
         </>}
 
         {tab === 'settings' && <>

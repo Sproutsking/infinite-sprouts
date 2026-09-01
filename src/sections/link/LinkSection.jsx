@@ -61,11 +61,11 @@ function LinkSection({showToast,onGoToMessages}){
 
         const getInitials = name => (name||'').split(' ').filter(Boolean).slice(0,2).map(p=>p[0]).join('').toUpperCase() || 'US';
         const makeFallbackUser = id => {
-          const stringId = String(id || '').trim();
           return {
             id,
-            name: stringId || 'Unknown User',
-            initials: stringId ? stringId.slice(0,2).toUpperCase() : '??',
+            name: 'Sprouts User',
+            username: String(id || '').slice(0, 8).toLowerCase(),
+            initials: 'SU',
             role: 'Member',
             bio: '',
             followers: 0,
@@ -79,13 +79,14 @@ function LinkSection({showToast,onGoToMessages}){
           acc[item.id] = {
             id: item.id,
             name: fullName,
+            username: item.username || (item.email ? item.email.split('@')[0] : ''),
             initials: item.initials || getInitials(fullName),
             role: item.role || 'Member',
             bio: item.bio || '',
             followers: item.followers || 0,
             following: item.following || 0,
             joined: item.joined || '',
-            avatarUrl: item.avatar_url || item.avatarUrl || item.photo_url || null,
+            avatar_url: item.avatar_url || item.avatarUrl || item.photo_url || null,
           };
           return acc;
         }, {});
@@ -94,13 +95,14 @@ function LinkSection({showToast,onGoToMessages}){
           profileMap[profile.id] = {
             id: profile.id,
             name: currentName,
+            username: profile.username || (profile.email ? profile.email.split('@')[0] : ''),
             initials: profile.initials || getInitials(currentName),
             role: profile.role || 'Member',
             bio: profile.bio || '',
             followers: profile.followers || 0,
             following: profile.following || 0,
             joined: profile.joined || '',
-            avatarUrl: profile.avatar_url || null,
+            avatar_url: profile.avatar_url || null,
           };
         }
 
@@ -375,19 +377,6 @@ function LinkSection({showToast,onGoToMessages}){
         {/* HEADER */}
         <div className="gvp-header">
           <AuthorTrigger userId={p.authorId}/>
-          
-          <div className="gvp-hsp">
-            <div className="gvp-author-row">
-              <AuthorTrigger userId={p.authorId} clickable>
-                <button className="gvp-author-name" style={{border:"none",background:"none",padding:0,cursor:"pointer"}}>
-                  {user.name||'Unknown'}
-                </button>
-              </AuthorTrigger>
-              <span className="gvp-ts">{p.createdAt?new Date(p.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric'}):''}</span>
-            </div>
-            <div className="gvp-author-handle">@{(user.username||user.name||'unknown').toLowerCase().replace(/\s+/g,'')}</div>
-          </div>
-
           <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:8}}>
             {p.communityId&&(
               <CommunityTrigger communityId={p.communityId}>

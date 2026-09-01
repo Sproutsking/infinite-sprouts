@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import I from '../icons/icons.jsx';
-import { Modal } from '../index.jsx';
+import Modal from './Modal.jsx';
 import { fmt } from '../utils/helpers.js';
 import produceService from '../services/produceService.js';
 import { useAuth } from '../context/AuthContext.jsx';
