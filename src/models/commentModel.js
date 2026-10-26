@@ -8,6 +8,7 @@ export class CommentModel {
       authorId: payload.author_id || payload.authorId || payload.user_id || null,
       body,
       text: body,
+      likes: Number(payload.likes || 0),
       createdAt: payload.created_at || payload.createdAt || null,
     };
   }

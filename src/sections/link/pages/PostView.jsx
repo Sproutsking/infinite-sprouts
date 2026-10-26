@@ -1,40 +1,42 @@
 import React, { useState, useRef, useEffect } from 'react';
 import I from '../../../icons/icons.jsx';
-import { Av, Modal } from '../../../components/index.jsx';
+import { Av } from '../../../components/index.jsx';
 import { useSocial } from '../../../context/SocialContext.jsx';
 import { useAuth } from '../../../context/AuthContext.jsx';
 import { AuthorTrigger, AuthorName } from '../../../popovers/ProfilePopover.jsx';
 import { CommentActionMenu } from '../../../popovers/CommentActionMenu.jsx';
 import PostActionMenu from '../../../popovers/PostActionMenu.jsx';
-import { createComment } from '../../../services/postService.js';
+import ReactionButton from '../../../components/ReactionButton.jsx';
+import ActionDialog from '../../../components/ActionDialog.jsx';
+import { createComment, deleteComment, fetchLikedCommentIds, toggleCommentLike as toggleCommentLikeService } from '../../../services/postService.js';
+import { formatPostTime } from '../../../utils/postTime.js';
 
-function formatTimeLabel(createdAt) {
-  if (!createdAt) return 'Just now';
-  const date = new Date(createdAt);
-  if (isNaN(date)) return 'Just now';
-  const diff = Date.now() - date.getTime();
-  const minute = 60 * 1000;
-  const hour = 60 * minute;
-  const day = 24 * hour;
-  if (diff < minute) return 'Just now';
-  if (diff < hour) return `${Math.floor(diff / minute)}m ago`;
-  if (diff < day) return `${Math.floor(diff / hour)}h ago`;
-  const days = Math.floor(diff / day);
-  if (days === 1) return 'Yesterday';
-  if (days < 7) return `${days}d ago`;
-  return date.toLocaleDateString();
-}
+const EMPTY_COMMENTS = [];
 
-function PostView({postId,highlightCommentId,posts,setPosts,comments,setComments,users,liked,onToggleLike,onBack,showToast,onSave,onShare,onDeletePost,onCopyLink}){
+function PostView({postId,highlightCommentId,posts,setPosts,comments,setComments,users,liked,onToggleLike,onBack,showToast,onSave,onShare,onEditPost,onToggleComments,onDeletePost,onCopyLink,onPinPost,onHidePost,onModerateUser,onConfirmBlock,onReportPost,onReportComment}){
   const { user, profile } = useAuth();
   const currentUserId = profile?.id || user?.id;
   const post=posts.find(p=>p.id===postId);
-  const postComments=comments[postId]||[];
+  const postComments=comments[postId]||EMPTY_COMMENTS;
   const [commentText,setCommentText]=useState("");
   const [replyingTo,setReplyingTo]=useState(null);
   const [replyText,setReplyText]=useState("");
   const [commentLiked,setCommentLiked]=useState({});
+  const [actionDialog,setActionDialog]=useState(null);
   const highlightRef=useRef(null);
+  const commentInputRef=useRef(null);
+
+  useEffect(() => {
+    if (!currentUserId) return;
+    const commentIds = postComments.flatMap(comment => [comment.id, ...(comment.replies || []).map(reply => reply.id)]);
+    let active = true;
+    fetchLikedCommentIds(currentUserId, commentIds)
+      .then(ids => {
+        if (active) setCommentLiked(Object.fromEntries(ids.map(id => [id, true])));
+      })
+      .catch(error => console.error('Error loading comment likes', error));
+    return () => { active = false; };
+  }, [currentUserId, postComments]);
 
   useEffect(()=>{
     if(highlightCommentId&&highlightRef.current){
@@ -100,14 +102,51 @@ function PostView({postId,highlightCommentId,posts,setPosts,comments,setComments
       showToast('error','Unable to post reply.');
     }
   }
-  function toggleCommentLike(id){setCommentLiked(p=>({...p,[id]:!p[id]}));}
-  function deleteTopComment(commentId){
-    setComments(p=>({...p,[postId]:(p[postId]||[]).filter(c=>c.id!==commentId)}));
-    showToast("ok","Comment deleted.");
+  async function toggleCommentLike(id){
+    if (!currentUserId) {
+      showToast('error', 'Sign in to like comments.');
+      return;
+    }
+    try {
+      const result = await toggleCommentLikeService(id);
+      setCommentLiked(previous => ({ ...previous, [id]: result.liked }));
+      setComments(previous => ({
+        ...previous,
+        [postId]: (previous[postId] || []).map(comment => comment.id === id
+          ? { ...comment, likes: result.likes }
+          : { ...comment, replies: (comment.replies || []).map(reply => reply.id === id ? { ...reply, likes: result.likes } : reply) }),
+      }));
+      return result.liked;
+    } catch (error) {
+      console.error('Comment like error', error);
+      showToast('error', error.message || 'Unable to update comment reaction.');
+      return false;
+    }
   }
-  function deleteReply(parentId,replyId){
-    setComments(p=>({...p,[postId]:(p[postId]||[]).map(c=>c.id===parentId?{...c,replies:(c.replies||[]).filter(r=>r.id!==replyId)}:c)}));
-    showToast("ok","Reply deleted.");
+  function removeComment(commentId, parentId = null){
+    setActionDialog({
+      title: 'Delete comment?',
+      message: 'This comment will be permanently deleted.',
+      confirmLabel: 'Delete comment',
+      danger: true,
+      onConfirm: async () => {
+        try {
+          await deleteComment(commentId, currentUserId);
+          setComments(previous => ({
+            ...previous,
+            [postId]: parentId
+              ? (previous[postId] || []).map(comment => comment.id === parentId ? { ...comment, replies: (comment.replies || []).filter(reply => reply.id !== commentId) } : comment)
+              : (previous[postId] || []).filter(comment => comment.id !== commentId),
+          }));
+          showToast('ok', 'Comment deleted.');
+          return true;
+        } catch (error) {
+          console.error('Comment delete error', error);
+          showToast('error', error.message || 'Unable to delete comment.');
+          return false;
+        }
+      },
+    });
   }
 
   const CommentRow=({c,isReply,parentId})=>{
@@ -116,11 +155,11 @@ function PostView({postId,highlightCommentId,posts,setPosts,comments,setComments
     const isOwner=String(c.authorId)===String(currentUserId);
     const isReplying=!isReply&&replyingTo===c.id;
     const bodyText = c.body || c.text || '';
-    const commentTime = c.createdAt ? formatTimeLabel(c.createdAt) : c.time || 'Just now';
+    const commentTime = c.createdAt ? formatPostTime(c.createdAt) : c.time || 'Just now';
     return(
       <div className={"comment-item"+(isHighlighted?" highlight":"")} ref={isHighlighted?highlightRef:null}>
         <div className="comment-row-wrap">
-          <CommentActionMenu isOwner={isOwner} onDelete={()=>isReply?deleteReply(parentId,c.id):deleteTopComment(c.id)} showToast={showToast}/>
+          <CommentActionMenu isOwner={isOwner} onDelete={()=>removeComment(c.id, isReply ? parentId : null)} onMute={()=>onModerateUser?.({authorId:c.authorId},'muted_users')} onReport={()=>onReportComment?.(c.id)} showToast={showToast}/>
           <Av initials={cUser?.initials||"?"} size="sm" src={cUser?.avatarUrl}/>
           <div className="comment-body-col">
             <div className="comment-meta-row">
@@ -129,12 +168,12 @@ function PostView({postId,highlightCommentId,posts,setPosts,comments,setComments
             </div>
             <div className="comment-text">{bodyText}</div>
             <div className="comment-acts-row">
-              <button className={"comment-act-btn"+(commentLiked[c.id]?" liked":"")} onClick={()=>toggleCommentLike(c.id)}><I.Heart/>{(c.likes||0)+(commentLiked[c.id]?1:0)}</button>
-              {!isReply&&<button className="comment-act-btn" onClick={()=>setReplyingTo(isReplying?null:c.id)}>{isReplying?<><I.X/>Cancel</>:<><I.Comment/>Reply</>}</button>}
+              <ReactionButton className="comment-act-btn" liked={!!commentLiked[c.id]} count={c.likes || 0} onToggle={()=>toggleCommentLike(c.id)} label={`${commentLiked[c.id]?'Unlike':'Like'} comment; ${c.likes || 0} likes`} />
+              {!isReply&&post.commentsEnabled&&<button className="comment-act-btn" onClick={()=>setReplyingTo(isReplying?null:c.id)}>{isReplying?<><I.X/>Cancel</>:<><I.Comment/>Reply</>}</button>}
             </div>
             {isReplying&&(
               <div className="reply-compose-row">
-                <Av initials="YO" size="sm" green/>
+                <Av initials={profile?.initials || 'US'} size="sm" green src={profile?.avatar_url}/>
                 <textarea className="reply-compose-input" rows={1} placeholder={"Reply to "+(cUser?.name||"")+"…"} value={replyText} onChange={e=>setReplyText(e.target.value)} autoFocus/>
                 <button className="ib" onClick={()=>postReply(c.id)}><I.Send/></button>
               </div>
@@ -150,21 +189,20 @@ function PostView({postId,highlightCommentId,posts,setPosts,comments,setComments
     );
   };
 
-  const commentInputRef=useRef(null);
-
   const isOwner = String(post.authorId) === String(currentUserId);
-  const timeLabel = formatTimeLabel(post.createdAt);
+  const timeLabel = formatPostTime(post.createdAt);
 
   return(
-    <div className="main">
+    <>
+    <div className="main main-link">
       <div className="post-view-hd">
         <button className="ib" onClick={onBack}><I.ArrowL/></button>
         <div style={{fontWeight:700,fontSize:13,color:"var(--t1)",flex:1}}>Post</div>
-        <PostActionMenu post={post} isOwner={isOwner} onDelete={()=>{onDeletePost&&onDeletePost();}} onCopyLink={onCopyLink} showToast={showToast}/>
+        <PostActionMenu post={post} isOwner={isOwner} onEdit={onEditPost} onTurnOffComments={onToggleComments} onDelete={()=>{onDeletePost&&onDeletePost(post);}} onCopyLink={onCopyLink} onPin={onPinPost} onHide={onHidePost} onMute={()=>onModerateUser?.(post,'muted_users')} onBlock={()=>onConfirmBlock?.(post)} onReport={onReportPost} showToast={showToast}/>
       </div>
       <div className="scroll" style={{padding:0}}>
         <div className="post-view-main">
-          <AuthorTrigger userId={post.authorId} size="lg"/>
+          <AuthorTrigger userId={post.authorId} size="lg" createdAt={post.createdAt}/>
           <div className="post-view-body">{post.body}</div>
           {post.image&&<div className="post-view-img">{post.image}</div>}
           {post.tags&&post.tags.length>0&&<div className="post-tags">{post.tags.map(t=><span key={t} className="post-tag">#{t}</span>)}</div>}
@@ -175,19 +213,19 @@ function PostView({postId,highlightCommentId,posts,setPosts,comments,setComments
             <span><b>{post.likes}</b> <span>Likes</span></span>
           </div>
           <div className="post-view-acts">
-            <button className={"post-act"+(liked[postId]?" liked":"")} onClick={()=>onToggleLike(postId)}><I.Heart/>Like</button>
-            <button className="post-act" onClick={()=>commentInputRef.current?.focus()}><I.Comment/>Comment</button>
-            <button className="post-act" onClick={()=>onShare&&onShare(post)}><I.Share/>Share</button>
-            <button className="post-act" onClick={()=>onSave&&onSave(post)}><I.Bookmark/>Save</button>
+            <ReactionButton className="post-act" liked={!!liked[postId]} count="Like" onToggle={()=>onToggleLike(postId)} label={`${liked[postId]?'Unlike':'Like'} post`} />
+            <button className="post-act" disabled={!post.commentsEnabled} onClick={()=>commentInputRef.current?.focus()}><I.Comment/>Comment</button>
+            <button className="post-act" onClick={event=>onShare?.(post,event.currentTarget)}><I.Share/>Share</button>
+            <button className="post-act" onClick={event=>onSave?.(post,event.currentTarget)}><I.Bookmark/>Save</button>
           </div>
         </div>
-        <div className="comment-composer">
-          <Av initials="YO" size="sm" green/>
+        {post.commentsEnabled ? <div className="comment-composer">
+          <Av initials={profile?.initials || 'US'} size="sm" green src={profile?.avatar_url}/>
           <div className="comment-input-wrap">
             <textarea ref={commentInputRef} className="comment-input" rows={1} placeholder="Post your reply…" value={commentText} onChange={e=>setCommentText(e.target.value)}/>
             <div className="comment-composer-foot"><button className="btn btn-p btn-sm" onClick={postComment} disabled={!commentText.trim()}><I.Send/>Reply</button></div>
           </div>
-        </div>
+        </div> : <div className="notice ni"><I.Info/><span>The author has turned off comments for this post.</span></div>}
         <div className="comment-thread">
           {postComments.length===0?
             <div className="empty"><div className="empty-ico">💬</div><div className="empty-t">No comments yet</div><div className="empty-s">Be the first to reply</div></div>:
@@ -197,6 +235,12 @@ function PostView({postId,highlightCommentId,posts,setPosts,comments,setComments
         <div style={{height:20}}/>
       </div>
     </div>
+    <ActionDialog
+      dialog={actionDialog}
+      onClose={() => setActionDialog(null)}
+      onSubmit={value => actionDialog?.onConfirm?.(value)}
+    />
+    </>
   );
 }
 

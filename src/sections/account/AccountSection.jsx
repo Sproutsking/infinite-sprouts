@@ -4,6 +4,7 @@ import { Av, Modal, Toggle } from '../../components/index.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { updateProfile, uploadProfileAvatar } from '../../services/profileService.js';
 import { updatePassword } from '../../services/authService.js';
+import { createDefaultUsername, isValidUsername, normalizeUsername } from '../../utils/username.js';
 
 function AccountSection({ theme, setTheme, showToast, onOpenNotifications, onOpenSupport }) {
   const { user, profile, refreshProfile, signOut } = useAuth();
@@ -18,6 +19,14 @@ function AccountSection({ theme, setTheme, showToast, onOpenNotifications, onOpe
   const [pwConfirm, setPwConfirm] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
+  const [username, setUsername] = useState('');
+  const suggestedUsername = user?.id
+    ? createDefaultUsername(
+      [firstName, lastName].filter(Boolean).join(' ') || profile?.full_name,
+      user.id,
+      user.email,
+    )
+    : '';
   const [phone, setPhone] = useState('');
   const [stateName, setStateName] = useState('');
   const [desc, setDesc] = useState('');
@@ -31,6 +40,9 @@ function AccountSection({ theme, setTheme, showToast, onOpenNotifications, onOpe
     const names = (profile.full_name || '').split(' ');
     setFirstName(names[0] || '');
     setLastName(names.slice(1).join(' ') || '');
+    setUsername(profile.username || (user?.id
+      ? createDefaultUsername(profile.full_name || user.user_metadata?.full_name || user.user_metadata?.name, user.id, user.email)
+      : ''));
     setPhone(profile.phone || '');
     setStateName(profile.state || '');
     setDesc(profile.bio || '');
@@ -40,6 +52,7 @@ function AccountSection({ theme, setTheme, showToast, onOpenNotifications, onOpe
   const isDirty = profile && (
     firstName !== (profile.full_name?.split(' ')[0] || '') ||
     lastName !== profile.full_name?.split(' ').slice(1).join(' ') ||
+    normalizeUsername(username) !== (profile.username || '') ||
     phone !== (profile.phone || '') ||
     stateName !== (profile.state || '') ||
     desc !== (profile.bio || '')
@@ -47,9 +60,15 @@ function AccountSection({ theme, setTheme, showToast, onOpenNotifications, onOpe
 
   async function saveProfile() {
     if (!user?.id) return;
+    const normalizedUsername = normalizeUsername(username);
+    if (!isValidUsername(normalizedUsername)) {
+      showToast('err', 'Username must be 3–32 characters using only letters, numbers, and underscores.');
+      return;
+    }
     try {
       await updateProfile(user.id, {
         full_name: [firstName, lastName].filter(Boolean).join(' ') || profile?.full_name,
+        username: normalizedUsername,
         phone,
         state: stateName,
         bio: desc,
@@ -58,7 +77,7 @@ function AccountSection({ theme, setTheme, showToast, onOpenNotifications, onOpe
       showToast('ok', 'Profile updated!');
     } catch (error) {
       console.error('Profile update error', error);
-      showToast('err', 'Unable to update profile.');
+      showToast('err', error.message || 'Unable to update profile.');
     }
   }
 
@@ -74,7 +93,7 @@ function AccountSection({ theme, setTheme, showToast, onOpenNotifications, onOpe
       showToast('ok', 'Profile image updated!');
     } catch (error) {
       console.error('Avatar upload error', error);
-      showToast('err', 'Unable to upload profile image.');
+      showToast('err', error.message || 'Unable to upload profile image.');
     } finally {
       setUploadingAvatar(false);
     }
@@ -115,7 +134,7 @@ function AccountSection({ theme, setTheme, showToast, onOpenNotifications, onOpe
   }
 
   return (
-    <div className="main">
+    <div className="main main-account">
       <div className="sub-hd">
         <button className={"sub-tab" + (tab === 'profile' ? ' on' : '')} onClick={() => setTab('profile')}><I.User/>Profile</button>
         <button className={"sub-tab" + (tab === 'settings' ? ' on' : '')} onClick={() => setTab('settings')}><I.Settings/>Settings</button>
@@ -132,7 +151,7 @@ function AccountSection({ theme, setTheme, showToast, onOpenNotifications, onOpe
                   <Av initials={profile?.initials || 'YO'} size="xl" green />
                 )}
               </div>
-              <div><div style={{ fontFamily: 'var(--fd)', fontSize: 18, fontWeight: 900, marginBottom: 2 }}>{profile?.full_name || user?.user_metadata?.full_name || 'Your Name'}</div><div style={{ fontSize: 11.5, opacity: .7 }}>{profile?.role || 'Farmer and Investor · Nigeria'}</div><div style={{ fontSize: 12, opacity: .6, marginTop: 2 }}>{user?.email || 'you@example.com'}</div></div>
+              <div><div style={{ fontFamily: 'var(--fd)', fontSize: 18, fontWeight: 900, marginBottom: 2 }}>{profile?.full_name || user?.user_metadata?.full_name || 'Your Name'}</div><div style={{ fontSize: 12, opacity: .75, marginBottom: 3 }}>@{isValidUsername(normalizeUsername(profile?.username || '')) ? normalizeUsername(profile.username) : suggestedUsername}</div><div style={{ fontSize: 11.5, opacity: .7 }}>{profile?.role || 'Farmer and Investor · Nigeria'}</div><div style={{ fontSize: 12, opacity: .6, marginTop: 2 }}>{user?.email || 'you@example.com'}</div></div>
             </div>
             <div style={{ position: 'relative', zIndex: 1, marginTop: 14, display: 'flex', gap: 7, flexWrap: 'wrap' }}>
               <button className="wc-btn" onClick={() => fileInputRef.current?.click()}><I.Edit/>Upload avatar</button>
@@ -149,6 +168,7 @@ function AccountSection({ theme, setTheme, showToast, onOpenNotifications, onOpe
           <div className="form-row" style={{ marginBottom: 12 }}>
             <div className="form-g"><label className="label">First Name</label><input className="field" value={firstName} onChange={e => setFirstName(e.target.value)} /></div>
             <div className="form-g"><label className="label">Last Name</label><input className="field" value={lastName} onChange={e => setLastName(e.target.value)} /></div>
+            <div className="form-g"><label className="label">Username</label><input className="field" value={username} onChange={e => setUsername(e.target.value)} placeholder={suggestedUsername} maxLength={33} autoCapitalize="none" autoCorrect="off" /><div className="field-hint">Your generated username is available by default. You can choose another unique handle.</div><button type="button" className="btn btn-g btn-sm" style={{marginTop:7}} onClick={() => setUsername(suggestedUsername)} disabled={!suggestedUsername}>Use suggested username</button></div>
             <div className="form-g"><label className="label">Phone</label><input className="field" value={phone} onChange={e => setPhone(e.target.value)} /></div>
             <div className="form-g"><label className="label">State</label><input className="field" value={stateName} onChange={e => setStateName(e.target.value)} /></div>
           </div>
@@ -217,7 +237,7 @@ function AccountSection({ theme, setTheme, showToast, onOpenNotifications, onOpe
         </>}
       </div>
 
-      <Modal open={pwOpen} onClose={() => setPwOpen(false)} title="Change Password" sheet
+      <Modal open={pwOpen} onClose={() => setPwOpen(false)} title="Change Password"
         footer={<><button className="btn btn-g" onClick={() => setPwOpen(false)}>Cancel</button><button className="btn btn-p" onClick={savePassword}><I.Check/>Update Password</button></>}>
         <div className="notice ni"><I.Info/><span>Use at least 8 characters with a mix of letters, numbers, and symbols for a strong password.</span></div>
         <div className="form-g"><label className="label">Current Password</label><input className="field" type="password" placeholder="Enter current password" value={pwCurrent} onChange={e => setPwCurrent(e.target.value)} /></div>

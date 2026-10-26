@@ -64,21 +64,23 @@ export function ProfileProvider({ children }) {
   }, [user?.id]);
 
   const setupFarmerProfile = useCallback(async (farmerData) => {
-    if (!user?.id) return;
+    if (!user?.id) throw new Error('Sign in before setting up a farmer profile.');
+    const farmSize = Number(farmerData.farm_size_hectares);
+    if (!farmerData.state || !Number.isFinite(farmSize) || farmSize <= 0) {
+      throw new Error('Choose a state and enter a valid farm size.');
+    }
     
     try {
       setLoading(true);
-      
-      // Set farmer role
-      await setUserRole('farmer');
-      
-      // Update profile with farm info
       const { data, error } = await supabase
         .from('profiles')
         .update({
           role_type: 'farmer',
           bio: farmerData.bio || 'Farmer on Infinite Sprouts',
           state: farmerData.state,
+          lga: farmerData.lga || null,
+          farm_size_hectares: farmSize,
+          crops_grown: farmerData.crops_grown || null,
           phone: farmerData.phone,
         })
         .eq('id', user.id)
@@ -90,13 +92,14 @@ export function ProfileProvider({ children }) {
       setFarmerProfile(data);
       setRoleType('farmer');
       return data;
+      return data;
     } catch (err) {
       console.error('Error setting up farmer profile:', err);
       throw err;
     } finally {
       setLoading(false);
     }
-  }, [user?.id, setUserRole]);
+  }, [user?.id]);
 
   const value = {
     roleType,

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import I from '../icons/icons.jsx';
 
-function CommentActionMenu({isOwner,onDelete,showToast}){
+function CommentActionMenu({isOwner,onDelete,onMute,onReport,showToast}){
   const [open,setOpen]=useState(false);
   const [dropUp,setDropUp]=useState(false);
   const ref=useRef(null);
@@ -27,8 +27,8 @@ function CommentActionMenu({isOwner,onDelete,showToast}){
           {isOwner?
             <button className="pmd-item danger" onClick={()=>{setOpen(false);onDelete&&onDelete();}}><I.Trash/>Delete</button>:
             <>
-              <button className="pmd-item" onClick={()=>{setOpen(false);showToast("ok","User muted.");}}><I.Bell/>Mute</button>
-              <button className="pmd-item danger" onClick={()=>{setOpen(false);showToast("ok","Comment reported.");}}><I.Ban/>Report</button>
+              <button className="pmd-item" onClick={()=>{setOpen(false);onMute?.();}}><I.Bell/>Mute author</button>
+              <button className="pmd-item danger" onClick={()=>{setOpen(false);onReport?.();}}><I.Ban/>Report comment</button>
             </>
           }
         </div>

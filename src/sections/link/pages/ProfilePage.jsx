@@ -12,11 +12,10 @@ function ProfilePage({userId,users,posts,comments,following,onToggleFollow,onDM,
   const currentUserId = profile?.id || authUser?.id;
   const [tab,setTab]=useState("posts");
   const fallbackUser = id => {
-    const stringId = String(id || '').trim();
     return {
       id,
-      name: stringId || 'Unknown User',
-      initials: stringId ? stringId.slice(0,2).toUpperCase() : '??',
+      name: 'Member',
+      initials: 'ME',
       role: 'Member',
       bio: '',
       followers: 0,
@@ -28,7 +27,8 @@ function ProfilePage({userId,users,posts,comments,following,onToggleFollow,onDM,
   const user=users[userId] || fallbackUser(userId);
   const isMe=String(userId)===String(currentUserId);
 
-  const myPosts=posts.filter(p=>String(p.authorId)===String(userId));
+  const myPosts=posts.filter(p=>String(p.authorId)===String(userId))
+    .sort((a,b)=>(b.pinnedAt?1:0)-(a.pinnedAt?1:0)||new Date(b.pinnedAt||b.createdAt||0)-new Date(a.pinnedAt||a.createdAt||0));
 
   // Build replies list: every comment/reply by this user, across all posts
   const myReplies=[];
@@ -42,7 +42,7 @@ function ProfilePage({userId,users,posts,comments,following,onToggleFollow,onDM,
   });
 
   return(
-    <div className="main">
+    <div className="main main-link">
       <div className="profile-page-hd">
         <button className="ib" onClick={onBack}><I.ArrowL/></button>
         <div>

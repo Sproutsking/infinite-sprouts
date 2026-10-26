@@ -2,6 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import I from '../icons/icons.jsx';
 import { Av } from '../components/index.jsx';
 import { useSocial } from '../context/SocialContext.jsx';
+import { formatPostTime } from '../utils/postTime.js';
+import { createDefaultUsername } from '../utils/username.js';
 
 function ProfilePopover({user,open,onClose}){
   const ctx=useSocial();
@@ -27,55 +29,54 @@ function ProfilePopover({user,open,onClose}){
   },[open]);
 
   if(!open||!user||!ctx) return null;
-  const {following,onToggleFollow,onDM,onSeeProfile}=ctx;
-  const isFollowing=!!following[user.id];
+  const {following,onToggleFollow,onDM,onSeeProfile,currentUserId}=ctx;
+  const isMe=Boolean(currentUserId&&String(user.id)===String(currentUserId));
+  const isFollowing=!isMe&&!!following[user.id];
   return(
     <div className={"profile-pop "+anchorClass} ref={ref} onClick={e=>e.stopPropagation()}>
       <div className="pp-top">
-        <Av initials={user.initials} size="lg" green/>
+        <Av initials={user.initials} size="lg" green src={user.avatarUrl}/>
         <div>
           <div className="pp-name">{user.name}</div>
-          <div className="pp-role">{user.role}</div>
+          <div className="pp-role">{isMe?'Your profile':user.role}</div>
         </div>
       </div>
-      <div className="pp-stats"><span><b>{user.followers?.toLocaleString()}</b> followers</span><span><b>{user.following}</b> following</span></div>
-      <div className="pp-acts">
-        <button className="pp-btn" onClick={()=>{onDM(user);onClose();}}><I.Msg/>DM</button>
-        <button className={"pp-btn"+(isFollowing?" following":" primary")} onClick={()=>{onToggleFollow(user.id);}}>
-          {isFollowing?<><I.Check/>Following</>:<><I.Plus/>Follow</>}
-        </button>
-        <button className="pp-btn" onClick={()=>{onSeeProfile(user.id);onClose();}}><I.User/>Profile</button>
-      </div>
+      <div className="pp-stats"><span><b>{Number(user.followers||0).toLocaleString()}</b> followers</span><span><b>{Number(user.following||0).toLocaleString()}</b> following</span></div>
+      {isMe
+        ? <div className="pp-acts"><button className="pp-btn primary" style={{width:"100%"}} onClick={()=>{onSeeProfile(user.id);onClose();}}><I.User/>View your profile</button></div>
+        : <div className="pp-acts">
+          <button className="pp-btn" onClick={()=>{onDM(user);onClose();}}><I.Msg/>DM</button>
+          <button className={"pp-btn"+(isFollowing?" following":" primary")} onClick={()=>{onToggleFollow(user.id);}}>
+            {isFollowing?<><I.Check/>Following</>:<><I.Plus/>Follow</>}
+          </button>
+          <button className="pp-btn" onClick={()=>{onSeeProfile(user.id);onClose();}}><I.User/>Profile</button>
+        </div>}
     </div>
   );
 }
 
 /* Clickable author trigger — works anywhere in the app via context */
 
-function AuthorTrigger({userId,size}){
+function AuthorTrigger({userId,size,createdAt}){
   const ctx=useSocial();
   const [open,setOpen]=useState(false);
   if(!ctx) return null;
-  const {users,onSeeProfile}=ctx;
-  const user=users[userId] || { id:userId, name:userId || 'Unknown', initials:(userId&&userId.toString().slice(0,2).toUpperCase())||'??', role:'Member' };
-  const isMe=userId==="you";
+  const {users,onSeeProfile,currentUserId}=ctx;
+  const user=users[userId] || { id:userId, name:'Member', initials:'ME', role:'Member' };
+  const isMe=Boolean(currentUserId&&String(userId)===String(currentUserId));
   return(
     <div className="profile-pop-anchor">
       <button className="author-trigger" onClick={e=>{e.stopPropagation();setOpen(v=>!v);}}>
-        <Av initials={user.initials} size={size||"md"}/>
+        <Av initials={user.initials} size={size||"md"} src={user.avatarUrl}/>
         <div>
           <div className="author-name-link">{user.name}</div>
-          <div className="post-meta">{user.role}</div>
+          <div className="post-meta">{[
+            `@${String(user.username || (user.id ? createDefaultUsername(user.name, user.id) : 'unknown_user')).replace(/^@/, '')}`,
+            createdAt ? formatPostTime(createdAt) : '',
+          ].filter(Boolean).join(' · ')}</div>
         </div>
       </button>
-      {open&&(isMe?(
-        <div className="profile-pop" onClick={e=>e.stopPropagation()}>
-          <div className="pp-top"><Av initials={user.initials} size="lg" green/><div><div className="pp-name">{user.name}</div><div className="pp-role">{user.role}</div></div></div>
-          <button className="pp-btn primary" style={{width:"100%"}} onClick={()=>{onSeeProfile(userId);setOpen(false);}}><I.User/>View Your Profile</button>
-        </div>
-      ):(
-        <ProfilePopover user={user} open={open} onClose={()=>setOpen(false)}/>
-      ))}
+      {open&&<ProfilePopover user={user} open={open} onClose={()=>setOpen(false)}/>}
     </div>
   );
 }
@@ -88,7 +89,7 @@ function AuthorName({userId,style}){
   if(!ctx) return null;
   const {users}=ctx;
   const user=users[userId];
-  if(!user) return <span style={style}>{userId}</span>;
+  if(!user) return <span style={style}>Member</span>;
   return(
     <div className="profile-pop-anchor" style={{display:"inline-block"}}>
       <span

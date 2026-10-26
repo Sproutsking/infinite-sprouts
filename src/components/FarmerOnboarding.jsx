@@ -4,7 +4,7 @@ import Modal from './Modal.jsx';
 import { useProfile } from '../context/ProfileContext.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 
-function FarmerOnboarding({ open, onClose }) {
+function FarmerOnboarding({ open, onClose, onSuccess }) {
   const { setupFarmerProfile, loading } = useProfile();
   const { profile } = useAuth();
   const [step, setStep] = useState(1);
@@ -41,8 +41,8 @@ function FarmerOnboarding({ open, onClose }) {
       }
       setStep(3);
     } else if (step === 3) {
-      if (!data.farmSize) {
-        setError('Please enter your farm size');
+      if (!data.farmSize || !Number.isFinite(Number(data.farmSize)) || Number(data.farmSize) <= 0) {
+        setError('Please enter a valid farm size greater than zero.');
         return;
       }
       setStep(4);
@@ -51,12 +51,15 @@ function FarmerOnboarding({ open, onClose }) {
         await setupFarmerProfile({
           state: data.state,
           lga: data.lga || '',
+          farm_size_hectares: data.farmSize,
+          crops_grown: data.cropsGrown || '',
           bio: data.bio || `Farmer in ${data.state} growing ${data.cropsGrown}`,
           phone: data.phone,
         });
         setSuccess(true);
         setTimeout(() => {
           onClose();
+          onSuccess?.();
           setSuccess(false);
           setStep(1);
           setData({ state: '', lga: '', farmSize: '', cropsGrown: '', bio: '', phone: '' });
@@ -70,7 +73,7 @@ function FarmerOnboarding({ open, onClose }) {
   if (!open) return null;
 
   return (
-    <Modal open={open} onClose={onClose} title={success ? "Welcome, Farmer! 🌾" : "Set Up Your Farmer Profile"} lg sheet
+    <Modal open={open} onClose={onClose} title={success ? "Welcome, Farmer! 🌾" : "Set Up Your Farmer Profile"} lg
       footer={!success ? (
         <>
           <button className="btn btn-g" onClick={() => { if (step > 1) setStep(step - 1); else onClose(); }}>

@@ -189,59 +189,122 @@ create index if not exists idx_wallets_user_id on wallets(user_id);
 -- Note: PostgreSQL/Supabase does not support CREATE POLICY IF NOT EXISTS, so run this script on a fresh schema or use explicit policy checks.
 
 alter table if exists profiles enable row level security;
+drop policy if exists "profiles_self_select" on profiles;
 create policy "profiles_self_select" on profiles for select using (auth.uid() = id);
+drop policy if exists "profiles_self_insert" on profiles;
 create policy "profiles_self_insert" on profiles for insert with check (auth.uid() = id);
+drop policy if exists "profiles_self_update" on profiles;
 create policy "profiles_self_update" on profiles for update using (auth.uid() = id) with check (auth.uid() = id);
 
+create or replace view public.public_profiles with (security_barrier = true) as
+select id, full_name, initials, avatar_url, role, bio, state, created_at
+from public.profiles;
+grant select on public.public_profiles to authenticated;
+
 alter table if exists wallets enable row level security;
+drop policy if exists "wallets_owner" on wallets;
 create policy "wallets_owner" on wallets for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 alter table if exists transactions enable row level security;
+drop policy if exists "transactions_owner_select" on transactions;
 create policy "transactions_owner_select" on transactions for select using (auth.uid() = user_id);
+drop policy if exists "transactions_owner_insert" on transactions;
 create policy "transactions_owner_insert" on transactions for insert with check (auth.uid() = user_id);
 
 alter table if exists notifications enable row level security;
+drop policy if exists "notifications_owner_select" on notifications;
 create policy "notifications_owner_select" on notifications for select using (auth.uid() = user_id);
+drop policy if exists "notifications_owner_insert" on notifications;
 create policy "notifications_owner_insert" on notifications for insert with check (auth.uid() = user_id);
+drop policy if exists "notifications_owner_update" on notifications;
 create policy "notifications_owner_update" on notifications for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 alter table if exists posts enable row level security;
+drop policy if exists "posts_public_select" on posts;
 create policy "posts_public_select" on posts for select using (true);
-create policy "posts_insert_auth" on posts for insert with check (auth.role() = 'authenticated');
+drop policy if exists "posts_insert_auth" on posts;
+create policy "posts_insert_auth" on posts for insert with check (auth.uid() = author_id);
+drop policy if exists "posts_owner_update" on posts;
+create policy "posts_owner_update" on posts for update using (auth.uid() = author_id) with check (auth.uid() = author_id);
+drop policy if exists "posts_owner_delete" on posts;
+create policy "posts_owner_delete" on posts for delete using (auth.uid() = author_id);
 
 alter table if exists comments enable row level security;
+drop policy if exists "comments_public_select" on comments;
 create policy "comments_public_select" on comments for select using (true);
+drop policy if exists "comments_insert_auth" on comments;
 create policy "comments_insert_auth" on comments for insert with check (auth.role() = 'authenticated');
 
 alter table if exists communities enable row level security;
+drop policy if exists "communities_public_select" on communities;
 create policy "communities_public_select" on communities for select using (true);
+drop policy if exists "communities_insert_auth" on communities;
 create policy "communities_insert_auth" on communities for insert with check (auth.role() = 'authenticated');
+drop policy if exists "communities_update_auth" on communities;
 create policy "communities_update_auth" on communities for update using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
 
 alter table if exists follows enable row level security;
+drop policy if exists "follows_owner" on follows;
 create policy "follows_owner" on follows for select using (auth.uid() = user_id);
+drop policy if exists "follows_insert_auth" on follows;
 create policy "follows_insert_auth" on follows for insert with check (auth.uid() = user_id);
+drop policy if exists "follows_delete_owner" on follows;
 create policy "follows_delete_owner" on follows for delete using (auth.uid() = user_id);
 
 alter table if exists market_items enable row level security;
+drop policy if exists "market_items_public_select" on market_items;
 create policy "market_items_public_select" on market_items for select using (true);
+drop policy if exists "market_items_insert_auth" on market_items;
 create policy "market_items_insert_auth" on market_items for insert with check (auth.role() = 'authenticated');
 
 alter table if exists orders enable row level security;
+drop policy if exists "orders_owner" on orders;
 create policy "orders_owner" on orders for select using (true);
+drop policy if exists "orders_insert_auth" on orders;
 create policy "orders_insert_auth" on orders for insert with check (auth.role() = 'authenticated');
 
 alter table if exists farms enable row level security;
+drop policy if exists "farms_public_select" on farms;
 create policy "farms_public_select" on farms for select using (true);
+drop policy if exists "farms_insert_auth" on farms;
 create policy "farms_insert_auth" on farms for insert with check (auth.role() = 'authenticated');
 
 alter table if exists conversations enable row level security;
+drop policy if exists "conversations_participant_select" on conversations;
 create policy "conversations_participant_select" on conversations for select using (auth.uid() = any(participant_ids));
-create policy "conversations_insert_auth" on conversations for insert with check (auth.role() = 'authenticated');
+drop policy if exists "conversations_insert_auth" on conversations;
+create policy "conversations_insert_auth" on conversations for insert with check (auth.uid() = any(participant_ids));
+drop policy if exists "conversations_update_auth" on conversations;
 create policy "conversations_update_auth" on conversations for update using (auth.uid() = any(participant_ids)) with check (auth.uid() = any(participant_ids));
 
 alter table if exists messages enable row level security;
-create policy "messages_conversation_participant_select" on messages for select using (true);
-create policy "messages_insert_auth" on messages for insert with check (auth.role() = 'authenticated');
+drop policy if exists "messages_conversation_participant_select" on messages;
+create policy "messages_conversation_participant_select" on messages for select using (
+  exists (select 1 from public.conversations c where c.id = conversation_id and auth.uid() = any(c.participant_ids))
+);
+drop policy if exists "messages_insert_auth" on messages;
+create policy "messages_insert_auth" on messages for insert with check (
+  auth.uid() = sender_id and exists (
+    select 1 from public.conversations c where c.id = conversation_id and auth.uid() = any(c.participant_ids)
+  )
+);
+drop policy if exists "messages_owner_delete" on messages;
+create policy "messages_owner_delete" on messages for delete using (auth.uid() = sender_id);
+
+insert into storage.buckets (id, name, public)
+values ('avatars', 'avatars', true)
+on conflict (id) do update set public = true;
+drop policy if exists "avatars_public_read" on storage.objects;
+create policy "avatars_public_read" on storage.objects for select using (bucket_id = 'avatars');
+drop policy if exists "avatars_owner_insert" on storage.objects;
+create policy "avatars_owner_insert" on storage.objects for insert to authenticated
+with check (bucket_id = 'avatars' and name like auth.uid()::text || '-%');
+drop policy if exists "avatars_owner_update" on storage.objects;
+create policy "avatars_owner_update" on storage.objects for update to authenticated
+using (bucket_id = 'avatars' and name like auth.uid()::text || '-%')
+with check (bucket_id = 'avatars' and name like auth.uid()::text || '-%');
+drop policy if exists "avatars_owner_delete" on storage.objects;
+create policy "avatars_owner_delete" on storage.objects for delete to authenticated
+using (bucket_id = 'avatars' and name like auth.uid()::text || '-%');
 
 -- End of schema

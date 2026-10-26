@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PostModel, CommentModel, ShareModel } from '../index.js';
+import { PostModel, CommentModel, ShareModel, CommunityModel } from '../index.js';
 
 test('normalizes post payloads and comment payloads', () => {
   const post = PostModel.fromPayload({
@@ -10,6 +10,7 @@ test('normalizes post payloads and comment payloads', () => {
     community_id: 'c-1',
     likes: 2,
     shares: 1,
+    pinned_at: '2024-01-02T00:00:00.000Z',
     created_at: '2024-01-01T00:00:00.000Z',
   });
 
@@ -17,15 +18,18 @@ test('normalizes post payloads and comment payloads', () => {
   assert.equal(post.body, 'Hello');
   assert.deepEqual(post.tags, ['farmers']);
   assert.equal(post.communityId, 'c-1');
+  assert.equal(post.pinnedAt, '2024-01-02T00:00:00.000Z');
 
   const comment = CommentModel.fromPayload({
     post_id: 'post-1',
     author_id: 'user-2',
     body: 'Nice work',
+    likes: 3,
   });
 
   assert.equal(comment.postId, 'post-1');
   assert.equal(comment.body, 'Nice work');
+  assert.equal(comment.likes, 3);
 });
 
 test('builds share payloads and keeps counts consistent', () => {
@@ -38,4 +42,32 @@ test('builds share payloads and keeps counts consistent', () => {
   assert.equal(share.postId, 'post-1');
   assert.equal(share.message, 'Shared for the team');
   assert.ok(share.createdAt);
+});
+
+test('community insert payload only includes schema columns', () => {
+  const payload = CommunityModel.toPayload({ name: 'Maize growers', count: 0 });
+
+  assert.equal(payload.name, 'Maize growers');
+  assert.equal('count' in payload, false);
+});
+
+test('normalizes owner-managed community settings', () => {
+  const community = CommunityModel.fromPayload({
+    owner_id: 'owner-1',
+    category: 'Crops',
+    privacy: 'private',
+    join_approval: true,
+    posts_enabled: false,
+    comments_enabled: false,
+    rules: 'Be kind',
+    cover_image_url: 'https://example.test/cover.jpg',
+  });
+
+  assert.equal(community.ownerId, 'owner-1');
+  assert.equal(community.category, 'Crops');
+  assert.equal(community.privacy, 'private');
+  assert.equal(community.joinApproval, true);
+  assert.equal(community.postsEnabled, false);
+  assert.equal(community.commentsEnabled, false);
+  assert.equal(community.rules, 'Be kind');
 });

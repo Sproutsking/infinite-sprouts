@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import supabase from '../lib/supabaseClient.js';
+import { createDefaultUsername, isValidUsername, normalizeUsername } from '../utils/username.js';
 
 const AuthCtx = createContext(null);
 
@@ -37,16 +38,18 @@ export function AuthProvider({ children }) {
       .eq('id', authUser.id)
       .single();
 
-    if (loadError && loadError.details?.includes('Results contain 0 rows')) {
-      const fullName = authUser.user_metadata?.full_name || authUser.user_metadata?.name || authUser.email || 'Sprouts User';
+    if (loadError?.code === 'PGRST116' && /0 rows/i.test(loadError.details || '')) {
+      const fullName = authUser.user_metadata?.full_name || authUser.user_metadata?.name || authUser.email?.split('@')[0] || 'Farm User';
       const initials = getInitials(fullName);
       const avatarUrl = getProviderAvatar(authUser);
+      const username = createDefaultUsername(fullName, authUser.id, authUser.email);
       const { data: newProfile, error: insertError } = await supabase
         .from('profiles')
         .insert({
           id: authUser.id,
           email: authUser.email,
           full_name: fullName,
+          username,
           initials,
           avatar_url: avatarUrl,
           role: 'Farmer and Investor · Nigeria',
@@ -67,8 +70,29 @@ export function AuthProvider({ children }) {
       return;
     }
 
+    const suggestedUsername = createDefaultUsername(
+      data.full_name || authUser.user_metadata?.full_name || authUser.user_metadata?.name,
+      authUser.id,
+      authUser.email,
+    );
+    let profileData = data;
+    if (!isValidUsername(normalizeUsername(data.username || '')) || normalizeUsername(data.username) === 'member') {
+      const { data: updatedUsernameProfile, error: usernameError } = await supabase
+        .from('profiles')
+        .update({ username: suggestedUsername })
+        .eq('id', authUser.id)
+        .select('*')
+        .single();
+      if (usernameError) {
+        console.error('Failed to generate profile username:', usernameError);
+        profileData = { ...data, username: suggestedUsername };
+      } else {
+        profileData = updatedUsernameProfile;
+      }
+    }
+
     const avatarUrl = getProviderAvatar(authUser);
-    if (!data.avatar_url && avatarUrl) {
+    if (!profileData.avatar_url && avatarUrl) {
       const { data: updatedProfile, error: updateError } = await supabase
         .from('profiles')
         .update({ avatar_url: avatarUrl })
@@ -82,7 +106,7 @@ export function AuthProvider({ children }) {
       console.warn('Failed to update profile avatar from provider:', updateError);
     }
 
-    setProfile(data);
+    setProfile(profileData);
   }, []);
 
   const clearAuthRedirectParams = useCallback(() => {

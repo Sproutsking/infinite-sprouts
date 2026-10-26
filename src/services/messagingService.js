@@ -22,3 +22,26 @@ export async function sendMessage(payload) {
   await supabase.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', payload.conversation_id);
   return data;
 }
+
+export async function deleteMessage(messageId, senderId) {
+  const { data, error } = await supabase
+    .from('messages')
+    .delete()
+    .eq('id', messageId)
+    .eq('sender_id', senderId)
+    .select('id')
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteOwnMessages(conversationId, senderId) {
+  const { data, error } = await supabase
+    .from('messages')
+    .delete()
+    .eq('conversation_id', conversationId)
+    .eq('sender_id', senderId)
+    .select('id');
+  if (error) throw error;
+  return data || [];
+}

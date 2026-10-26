@@ -95,7 +95,7 @@ function CreateLaborServiceModal({ open, onClose, onSuccess, showToast }) {
   if (!open) return null;
 
   return (
-    <Modal open={open} onClose={onClose} title="Offer Your Labor Services" wide sheet
+    <Modal open={open} onClose={onClose} title="Offer Your Labor Services" wide
       footer={
         <>
           <button className="btn btn-g" onClick={onClose}>Cancel</button>
@@ -105,7 +105,7 @@ function CreateLaborServiceModal({ open, onClose, onSuccess, showToast }) {
         </>
       }>
       
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+      <div className="flex-columns">
         <div>
           <div className="form-g" style={{ marginBottom: 12 }}>
             <label className="label">Service Name *</label>

@@ -13,6 +13,8 @@ export class PostModel {
       likes: Number(payload.likes || 0),
       comments: Number(payload.comments || 0),
       shares: Number(payload.shares || 0),
+      commentsEnabled: payload.comments_enabled !== false && payload.commentsEnabled !== false,
+      pinnedAt: payload.pinned_at || payload.pinnedAt || null,
       createdAt: payload.created_at || payload.createdAt || null,
       image: payload.image || payload.media || null,
     };
@@ -26,6 +28,7 @@ export class PostModel {
       community_id: model.communityId || null,
       likes: Number(model.likes || 0),
       shares: Number(model.shares || 0),
+      comments_enabled: model.commentsEnabled !== false,
       created_at: model.createdAt || new Date().toISOString(),
       image: model.image || null,
     };

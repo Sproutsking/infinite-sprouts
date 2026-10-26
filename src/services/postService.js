@@ -75,6 +75,52 @@ export async function createPost(payload) {
   return PostModel.fromPayload(data);
 }
 
+export async function deletePost(postId) {
+  const { data, error } = await supabase.rpc('delete_post_v2', {
+    target_post_id: postId,
+  });
+  if (error) throw error;
+  if (!data) throw new Error('Post not found or you do not have permission to delete it.');
+  return { id: postId };
+}
+
+export async function updatePost(postId, authorId, updates) {
+  let targetAuthorId = authorId || null;
+
+  if (!targetAuthorId) {
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError) throw userError;
+    targetAuthorId = user?.id || null;
+  }
+
+  if (!targetAuthorId) {
+    throw new Error('Authentication required to update a post.');
+  }
+
+  const { data, error } = await supabase
+    .from('posts')
+    .update({ body: updates.body, tags: updates.tags || [] })
+    .eq('id', postId)
+    .eq('author_id', targetAuthorId)
+    .select('*')
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw new Error('You can only edit your own posts.');
+  return PostModel.fromPayload(data);
+}
+
+export async function setPostCommentsEnabled(postId, authorId, enabled) {
+  const { data, error } = await supabase
+    .from('posts')
+    .update({ comments_enabled: enabled })
+    .eq('id', postId)
+    .eq('author_id', authorId)
+    .select('*')
+    .single();
+  if (error) throw error;
+  return PostModel.fromPayload(data);
+}
+
 export async function createComment(payload) {
   const resolvedAuthorId = payload?.author_id || payload?.authorId || payload?.user_id || null;
   let authorId = resolvedAuthorId;
@@ -96,25 +142,163 @@ export async function createComment(payload) {
   return CommentModel.fromPayload(data);
 }
 
-export async function togglePostLike(postId, userId, liked) {
-  const { data: current, error: fetchError } = await supabase.from('posts').select('id, likes').eq('id', postId).single();
-  if (fetchError) throw fetchError;
-  const nextLikes = liked ? Math.max(0, Number(current?.likes || 0) - 1) : Number(current?.likes || 0) + 1;
-  const { data, error } = await supabase.from('posts').update({ likes: nextLikes }).eq('id', postId).select('*').single();
+export async function deleteComment(commentId, authorId) {
+  const { data, error } = await supabase.rpc('delete_comment', { target_comment_id: commentId });
   if (error) throw error;
-  return PostModel.fromPayload({ ...data, likes: nextLikes });
+  return data;
+}
+
+export async function fetchLikedCommentIds(userId, commentIds = []) {
+  if (!userId || !commentIds.length) return [];
+  const { data, error } = await supabase
+    .from('comment_likes')
+    .select('comment_id')
+    .eq('user_id', userId)
+    .in('comment_id', commentIds);
+  if (error) throw error;
+  return (data || []).map(row => row.comment_id);
+}
+
+export async function toggleCommentLike(commentId) {
+  const { data, error } = await supabase.rpc('toggle_comment_like', { target_comment_id: commentId });
+  if (error) throw error;
+  return { liked: Boolean(data?.liked), likes: Number(data?.likes || 0) };
+}
+
+export async function togglePostLike(postId, userId, liked) {
+  const { data, error } = await supabase.rpc('toggle_post_like', { target_post_id: postId });
+  if (error) throw error;
+  return { liked: Boolean(data?.liked), likes: Number(data?.likes || 0) };
 }
 
 export async function sharePost(postId, userId, message = '') {
-  const { data: current, error: fetchError } = await supabase.from('posts').select('id, shares').eq('id', postId).single();
-  if (fetchError) throw fetchError;
-  const nextShares = Number(current?.shares || 0) + 1;
-  const { data, error } = await supabase.from('posts').update({ shares: nextShares }).eq('id', postId).select('*').single();
+  const requestId = globalThis.crypto?.randomUUID?.();
+  if (!requestId) throw new Error('This browser cannot create a secure share request.');
+  const { data, error } = await supabase.rpc('record_post_share_v2', {
+    target_post_id: postId,
+    share_method: message || 'native',
+    request_id: requestId,
+    share_message: null,
+  });
   if (error) throw error;
   return {
-    share: ShareModel.fromPayload({ post_id: postId, author_id: userId, message, created_at: new Date().toISOString() }),
-    post: PostModel.fromPayload({ ...data, shares: nextShares }),
+    share: ShareModel.fromPayload({ id: data?.id, post_id: postId, author_id: userId, message: '', created_at: new Date().toISOString() }),
+    post: { id: postId, shares: Number(data?.shares || 0) },
   };
+}
+
+export async function fetchLikedPostIds(userId) {
+  if (!userId) return [];
+  const { data, error } = await supabase
+    .from('post_likes')
+    .select('post_id')
+    .eq('user_id', userId);
+  if (error) throw error;
+  return (data || []).map(row => row.post_id);
+}
+
+export async function fetchSaveCollections() {
+  const { data, error } = await supabase.from('save_collections').select('*').order('created_at', { ascending: true });
+  if (error) throw error;
+  return data || [];
+}
+
+export async function fetchSavedPostMap() {
+  const { data, error } = await supabase.from('saved_posts').select('post_id, collection_id');
+  if (error) throw error;
+  return (data || []).reduce((map, row) => {
+    const postKey = String(row.post_id);
+    map[postKey] = [...(map[postKey] || []), row.collection_id];
+    return map;
+  }, {});
+}
+
+export async function createSaveCollection(name, color = '#38a038') {
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  if (userError) throw userError;
+  if (!user) throw new Error('Sign in to create a collection.');
+  const { data, error } = await supabase.from('save_collections')
+    .insert({ user_id: user.id, name: name.trim(), color })
+    .select('*')
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function toggleSavedPost(postId, collectionId) {
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  if (userError) throw userError;
+  if (!user) throw new Error('Sign in to save posts.');
+  const existing = await supabase.from('saved_posts').select('post_id')
+    .eq('user_id', user.id).eq('collection_id', collectionId).eq('post_id', postId).maybeSingle();
+  if (existing.error) throw existing.error;
+  if (existing.data) {
+    const { error } = await supabase.from('saved_posts').delete()
+      .eq('user_id', user.id).eq('collection_id', collectionId).eq('post_id', postId);
+    if (error) throw error;
+    return false;
+  }
+  const { error } = await supabase.from('saved_posts').insert({ user_id: user.id, collection_id: collectionId, post_id: postId });
+  if (error) throw error;
+  return true;
+}
+
+export async function fetchFeedPreferences() {
+  const [hidden, muted, blocked] = await Promise.all([
+    supabase.from('hidden_posts').select('post_id'),
+    supabase.from('muted_users').select('target_user_id'),
+    supabase.from('blocked_users').select('target_user_id'),
+  ]);
+  for (const result of [hidden, muted, blocked]) if (result.error) throw result.error;
+  return {
+    hiddenPostIds: (hidden.data || []).map(row => String(row.post_id)),
+    mutedUserIds: (muted.data || []).map(row => String(row.target_user_id)),
+    blockedUserIds: (blocked.data || []).map(row => String(row.target_user_id)),
+  };
+}
+
+export async function hidePost(postId) {
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  if (userError) throw userError;
+  if (!user) throw new Error('Sign in to manage your feed.');
+  const { error } = await supabase.from('hidden_posts').upsert({ user_id: user.id, post_id: postId }, { onConflict: 'user_id,post_id' });
+  if (error) throw error;
+}
+
+export async function setUserModeration(targetUserId, table, enabled = true) {
+  const allowedTables = new Set(['muted_users', 'blocked_users']);
+  if (!allowedTables.has(table)) throw new Error('Unsupported moderation action.');
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  if (userError) throw userError;
+  if (!user) throw new Error('Sign in to manage your feed.');
+  let query = supabase.from(table);
+  query = enabled
+    ? query.upsert({ user_id: user.id, target_user_id: targetUserId }, { onConflict: 'user_id,target_user_id' })
+    : query.delete().eq('user_id', user.id).eq('target_user_id', targetUserId);
+  const { error } = await query;
+  if (error) throw error;
+}
+
+export async function reportPost(postId, reason, details = '') {
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  if (userError) throw userError;
+  if (!user) throw new Error('Sign in to report a post.');
+  const { error } = await supabase.from('post_reports').insert({ reporter_id: user.id, post_id: postId, reason, details });
+  if (error) throw error;
+}
+
+export async function reportComment(commentId, reason, details = '') {
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  if (userError) throw userError;
+  if (!user) throw new Error('Sign in to report a comment.');
+  const { error } = await supabase.from('comment_reports').insert({ reporter_id: user.id, comment_id: commentId, reason, details });
+  if (error) throw error;
+}
+
+export async function togglePinnedPost(postId) {
+  const { data, error } = await supabase.rpc('toggle_post_pin', { target_post_id: postId });
+  if (error) throw error;
+  return data;
 }
 
 export default {
@@ -122,6 +306,7 @@ export default {
   fetchCommentsForPost,
   fetchCommentsForPosts,
   createPost,
+  updatePost,
   createComment,
   togglePostLike,
   sharePost,

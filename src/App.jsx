@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import CSS from './styles/global.css.js';
 import I from './icons/icons.jsx';
-import { Toasts, Toggle } from './components/index.jsx';
+import { Av, Toasts, Toggle } from './components/index.jsx';
 import Sidebar from './components/Sidebar.jsx';
 import { fmt } from './utils/helpers.js';
 import { useAuth } from './context/AuthContext.jsx';
@@ -27,8 +27,11 @@ export default function App(){
   const [notifOpen,setNotifOpen]=useState(false);
   const [farmListOpen,setFarmListOpen]=useState(false);
   const [farmActiveTab,setFarmActiveTab]=useState('produce');
+  const [createPostRequest,setCreatePostRequest]=useState(0);
+  const [communityRightRail,setCommunityRightRail]=useState(null);
   const [messageUnreadCount,setMessageUnreadCount]=useState(0);
   const [messageBadgeText,setMessageBadgeText]=useState('');
+  const [linkStats,setLinkStats]=useState(null);
   const ddRef=useRef(null);
 
   const walletIST = wallet?.ist || 0;
@@ -50,16 +53,24 @@ export default function App(){
   useEffect(()=>{document.documentElement.setAttribute('data-theme',theme);},[theme]);
 
   useEffect(()=>{
+    if(section!=='link') {
+      setCommunityRightRail(null);
+      setLinkStats(null);
+    }
+  },[section]);
+
+  useEffect(()=>{
     function h(e){if(ddRef.current&&!ddRef.current.contains(e.target))setDdOpen(false);}
     document.addEventListener('mousedown',h);
     return()=>document.removeEventListener('mousedown',h);
   },[]);
 
-  function toast(type,msg){
+  const toast=useCallback((type,msg)=>{
     const id=Date.now();
     setToasts(p=>[...p,{id,type,msg}]);
     setTimeout(()=>setToasts(p=>p.filter(t=>t.id!==id)),3200);
-  }
+  },[]);
+  const updateLinkStats=useCallback(stats=>setLinkStats(stats),[]);
 
   async function spend(walletType,amount,title){
     const total = Number(amount);
@@ -92,6 +103,11 @@ export default function App(){
     }
   }
 
+  function openCreatePost(){
+    setSection('link');
+    setCreatePostRequest(request => request + 1);
+  }
+
   const sectionTitle={link:'Link',farm:'Farm',labs:'Labs',wallet:'Wallet',messages:'Messages',account:'Account'};
   const navItems=[
     {k:'link',l:'Link',ic:I.Link},
@@ -103,34 +119,15 @@ export default function App(){
 
   const railCards = {
     link: [
-      { label: 'Network pulse', value: '12.4%', icon: <I.TrendUp/> },
-      { label: 'Posts', value: '286', icon: <I.Link/> },
-      { label: 'Communities', value: '24', icon: <I.Users/> }
-    ],
-    farm: [
-      { label: 'Market', value: '9.2%', icon: <I.Farm/> },
-      { label: 'Active farms', value: '18', icon: <I.Seedling/> },
-      { label: 'Investments', value: '₦2.4M', icon: <I.TrendUp/> }
-    ],
-    labs: [
-      { label: 'AI tasks', value: '5', icon: <I.Labs/> },
-      { label: 'Signals', value: '18', icon: <I.Bell/> },
-      { label: 'Insights', value: '92%', icon: <I.TrendUp/> }
+      { label: 'Posts', value: linkStats ? String(linkStats.posts) : '—', icon: <I.Link/> },
+      { label: 'Communities', value: linkStats ? String(linkStats.communities) : '—', icon: <I.Users/> }
     ],
     wallet: [
       { label: 'Balance', value: `₦${fmt(walletNaira || 0)}`, icon: <I.Wallet/> },
-      { label: 'IST', value: `${fmt(walletIST || 0)} IST`, icon: <I.CreditCard/> },
-      { label: 'Transfers', value: '13', icon: <I.ArrowR/> }
+      { label: 'IST', value: `${fmt(walletIST || 0)} IST`, icon: <I.CreditCard/> }
     ],
     messages: [
-      { label: 'Unread', value: String(messageUnreadCount || 0), icon: <I.Msg/> },
-      { label: 'Active chats', value: '7', icon: <I.Users/> },
-      { label: 'Replies', value: '34', icon: <I.Bell/> }
-    ],
-    account: [
-      { label: 'Profile', value: 'Ready', icon: <I.User/> },
-      { label: 'Support', value: 'Live', icon: <I.Help/> },
-      { label: 'Security', value: 'High', icon: <I.Check/> }
+      { label: 'Unread', value: String(messageUnreadCount || 0), icon: <I.Msg/> }
     ]
   };
 
@@ -139,11 +136,13 @@ export default function App(){
       <header className='root-hd'>
         <div className='hd-left'>
           <div className='profile-wrap' ref={ddRef}>
-            <button className='profile-btn' onClick={()=>setDdOpen(v=>!v)}>{profile?.initials||'YO'}</button>
+            <button className='profile-btn' onClick={()=>setDdOpen(v=>!v)} aria-label="Open profile menu">
+              {profile?.avatar_url ? <img src={profile.avatar_url} alt="" style={{width:'100%',height:'100%',objectFit:'cover',borderRadius:'inherit'}}/> : profile?.initials||'YO'}
+            </button>
             {ddOpen&&(
               <div className='profile-dd'>
                 <div className='dd-head'>
-                  <div className='dd-av'>{profile?.initials||'YO'}</div>
+                  <div className='dd-av'>{profile?.avatar_url ? <img src={profile.avatar_url} alt="" style={{width:'100%',height:'100%',objectFit:'cover',borderRadius:'inherit'}}/> : profile?.initials||'YO'}</div>
                   <div className='dd-name'>{profile?.full_name||user?.user_metadata?.full_name||'Your Name'}</div>
                   <div className='dd-email'>{user?.email||'you@example.com'}</div>
                 </div>
@@ -183,19 +182,23 @@ export default function App(){
         </div>
       </header>
 
-      <Sidebar navItems={navItems} section={section} setSection={setSection} />
+      <div className='workspace'>
+        <Sidebar navItems={navItems} section={section} setSection={setSection} onCreatePost={openCreatePost} />
 
-      <div className='main-shell'>
-        <div className='main'>
-          {section==='link'&&<LinkSection showToast={toast} onGoToMessages={()=>setSection('messages')}/>} 
-          {section==='farm'&&<FarmSection walletIST={walletIST} walletNaira={walletNaira} onSpend={spend} showToast={toast} listOpen={farmListOpen} setListOpen={setFarmListOpen} activeFarmTab={farmActiveTab} setActiveFarmTab={setFarmActiveTab}/>}
-          {section==='labs'&&<LabsSection showToast={toast}/>}
-          {section==='wallet'&&<WalletSection showToast={toast}/>}
-          {section==='messages'&&<MessagesSection showToast={toast} onUnreadChange={setMessageUnreadCount}/>} 
-          {section==='account'&&<AccountSection theme={theme} setTheme={setTheme} showToast={toast} onOpenNotifications={()=>setNotifOpen(true)} onOpenSupport={()=>setSupportOpen(true)}/>} 
-        </div>
+        <div className={'main-shell' + (section === 'messages' ? ' messages-layout' : '') + (communityRightRail && section === 'link' ? ' community-layout' : '')}>
+          <div className='section-host'>
+            {section==='link'&&<LinkSection showToast={toast} onGoToMessages={()=>setSection('messages')} createPostRequest={createPostRequest} onCommunityRightRailChange={setCommunityRightRail} onLinkStatsChange={updateLinkStats}/>}
+            {section==='farm'&&<FarmSection walletIST={walletIST} walletNaira={walletNaira} onSpend={spend} showToast={toast} listOpen={farmListOpen} setListOpen={setFarmListOpen} activeFarmTab={farmActiveTab} setActiveFarmTab={setFarmActiveTab}/>}
+            {section==='labs'&&<LabsSection showToast={toast}/>}
+            {section==='wallet'&&<WalletSection showToast={toast}/>}
+            {section==='messages'&&<MessagesSection showToast={toast} onUnreadChange={setMessageUnreadCount}/>}
+            {section==='account'&&<AccountSection theme={theme} setTheme={setTheme} showToast={toast} onOpenNotifications={()=>setNotifOpen(true)} onOpenSupport={()=>setSupportOpen(true)}/>}
+          </div>
 
-        <aside className='right-rail'>
+          {section !== 'messages' && (
+          communityRightRail && section==='link'
+            ? <aside className='right-rail community-right-rail'>{communityRightRail}</aside>
+            : <aside className='right-rail'>
           <div className='rail-card'>
             <div className='rail-copy'>
               <div className='rail-title'>Overview</div>
@@ -219,20 +222,22 @@ export default function App(){
               <div className='rail-headline'>Stay ahead</div>
               <div className='rail-sub'>Fast access to your most active workflows.</div>
             </div>
-            <button className='rail-button' type='button'>
+            <button className='rail-button' type='button' onClick={()=>{setSection('farm');setFarmActiveTab('produce');setFarmListOpen(true);}}>
               <span className='rail-label'><span className='rail-ico'><I.Plus/></span>New listing</span>
               <span className='rail-value'>+</span>
             </button>
-            <button className='rail-button' type='button'>
+            <button className='rail-button' type='button' onClick={()=>setNotifOpen(true)}>
               <span className='rail-label'><span className='rail-ico'><I.Bell/></span>Alerts</span>
               <span className='rail-value'>{unreadCount}</span>
             </button>
-            <button className='rail-button' type='button'>
+            <button className='rail-button' type='button' onClick={()=>setSupportOpen(true)}>
               <span className='rail-label'><span className='rail-ico'><I.Help/></span>Support</span>
               <span className='rail-value'>↗</span>
             </button>
           </div>
-        </aside>
+            </aside>
+          )}
+        </div>
       </div>
 
       {supportOpen && <SupportSection onClose={()=>setSupportOpen(false)} />}
@@ -240,4 +245,3 @@ export default function App(){
     </div>
   );
 }
-

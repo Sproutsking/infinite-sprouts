@@ -19,8 +19,11 @@ create table if not exists public.profiles (
   bio text,
   phone text,
   state text,
+  username text,
   created_at timestamptz default now()
 );
+
+alter table public.profiles add column if not exists username text;
 
 -- 3) Wallets
 create table if not exists public.wallets (
@@ -263,6 +266,11 @@ BEGIN
   END IF;
 END $$;
 
+create or replace view public.public_profiles with (security_barrier = true) as
+select id, full_name, initials, avatar_url, role, bio, state, created_at, username
+from public.profiles;
+grant select on public.public_profiles to authenticated;
+
 -- Wallets
 DO $$
 BEGIN
@@ -312,6 +320,10 @@ BEGIN
     CREATE POLICY posts_insert_auth ON public.posts FOR INSERT WITH CHECK (auth.uid() = author_id);
   END IF;
 END $$;
+drop policy if exists posts_owner_update on public.posts;
+create policy posts_owner_update on public.posts for update using (auth.uid() = author_id) with check (auth.uid() = author_id);
+drop policy if exists posts_owner_delete on public.posts;
+create policy posts_owner_delete on public.posts for delete using (auth.uid() = author_id);
 
 -- Comments
 DO $$
@@ -408,13 +420,14 @@ BEGIN
 END $$;
 
 -- Conversations
+DROP POLICY IF EXISTS conversations_insert_auth ON public.conversations;
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'conversations' AND policyname = 'conversations_participant_select') THEN
     CREATE POLICY conversations_participant_select ON public.conversations FOR SELECT USING (auth.uid() = any(participant_ids));
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'conversations' AND policyname = 'conversations_insert_auth') THEN
-    CREATE POLICY conversations_insert_auth ON public.conversations FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+    CREATE POLICY conversations_insert_auth ON public.conversations FOR INSERT WITH CHECK (auth.uid() = any(participant_ids));
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'conversations' AND policyname = 'conversations_update_auth') THEN
     CREATE POLICY conversations_update_auth ON public.conversations FOR UPDATE USING (auth.uid() = any(participant_ids)) WITH CHECK (auth.uid() = any(participant_ids));
@@ -422,29 +435,35 @@ BEGIN
 END $$;
 
 -- Messages
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'messages' AND policyname = 'messages_public_select') THEN
-    CREATE POLICY messages_public_select ON public.messages FOR SELECT USING (true);
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'messages' AND policyname = 'messages_insert_auth') THEN
-    CREATE POLICY messages_insert_auth ON public.messages FOR INSERT WITH CHECK (auth.role() = 'authenticated');
-  END IF;
-END $$;
+DROP POLICY IF EXISTS messages_public_select ON public.messages;
+DROP POLICY IF EXISTS messages_conversation_participant_select ON public.messages;
+CREATE POLICY messages_conversation_participant_select ON public.messages FOR SELECT USING (
+  EXISTS (SELECT 1 FROM public.conversations c WHERE c.id = conversation_id AND auth.uid() = ANY(c.participant_ids))
+);
+DROP POLICY IF EXISTS messages_insert_auth ON public.messages;
+CREATE POLICY messages_insert_auth ON public.messages FOR INSERT WITH CHECK (
+  auth.uid() = sender_id AND EXISTS (
+    SELECT 1 FROM public.conversations c WHERE c.id = conversation_id AND auth.uid() = ANY(c.participant_ids)
+  )
+);
+DROP POLICY IF EXISTS messages_owner_delete ON public.messages;
+CREATE POLICY messages_owner_delete ON public.messages FOR DELETE USING (auth.uid() = sender_id);
 
--- =========================================================
--- Cleanup of previously injected sample data
--- =========================================================
--- Remove the earlier sample rows from any database that was
--- populated during setup/testing so only real live content remains.
-delete from public.communities
-where lower(trim(name)) in ('farmers circle', 'agri jobs', 'research lab');
-
-delete from public.market_items
-where lower(trim(name)) in ('organic compost', 'irrigation pump');
-
-delete from public.farms
-where lower(trim(name)) in ('sunrise maize farm', 'riverbank vegetable hub');
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('avatars', 'avatars', true)
+ON CONFLICT (id) DO UPDATE SET public = true;
+DROP POLICY IF EXISTS avatars_public_read ON storage.objects;
+CREATE POLICY avatars_public_read ON storage.objects FOR SELECT USING (bucket_id = 'avatars');
+DROP POLICY IF EXISTS avatars_owner_insert ON storage.objects;
+CREATE POLICY avatars_owner_insert ON storage.objects FOR INSERT TO authenticated
+WITH CHECK (bucket_id = 'avatars' AND name LIKE auth.uid()::text || '-%');
+DROP POLICY IF EXISTS avatars_owner_update ON storage.objects;
+CREATE POLICY avatars_owner_update ON storage.objects FOR UPDATE TO authenticated
+USING (bucket_id = 'avatars' AND name LIKE auth.uid()::text || '-%')
+WITH CHECK (bucket_id = 'avatars' AND name LIKE auth.uid()::text || '-%');
+DROP POLICY IF EXISTS avatars_owner_delete ON storage.objects;
+CREATE POLICY avatars_owner_delete ON storage.objects FOR DELETE TO authenticated
+USING (bucket_id = 'avatars' AND name LIKE auth.uid()::text || '-%');
 
 -- =========================================================
 -- No seed data

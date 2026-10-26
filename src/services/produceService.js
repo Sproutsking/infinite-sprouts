@@ -19,9 +19,10 @@ export async function createProduceListing(sellerData) {
     location_details: sellerData.location_details,
     image_url: sellerData.image_url,
     certification: sellerData.certification,
+    quality_condition: sellerData.quality_condition || 'unspecified',
     can_deliver: sellerData.can_deliver || false,
     delivery_radius_km: sellerData.delivery_radius_km,
-    expiry_date: sellerData.expiry_date,
+    expiry_date: sellerData.expiry_date || null,
   }).select('*').single();
   
   if (error) throw error;
@@ -43,12 +44,7 @@ export async function updateProduceListing(listingId, updates) {
 export async function getProduceListing(listingId) {
   const { data, error } = await supabase
     .from('produce_listings')
-    .select(`
-      *,
-      profiles:seller_id (
-        id, full_name, avatar_url, rating, review_count
-      )
-    `)
+    .select('*')
     .eq('id', listingId)
     .single();
   
@@ -59,12 +55,7 @@ export async function getProduceListing(listingId) {
 export async function searchProduce(query, state = null, limit = 50) {
   let queryBuilder = supabase
     .from('produce_listings')
-    .select(`
-      *,
-      profiles:seller_id (
-        id, full_name, avatar_url, rating
-      )
-    `)
+    .select('*')
     .eq('status', 'active');
   
   if (state) {
@@ -127,12 +118,6 @@ export async function getProduceOrder(orderId) {
       *,
       produce_listings:listing_id (
         name, produce_type, image_url, unit
-      ),
-      buyer:buyer_id (
-        id, full_name, avatar_url, phone
-      ),
-      seller:seller_id (
-        id, full_name, avatar_url, phone
       )
     `)
     .eq('id', orderId)
@@ -149,9 +134,6 @@ export async function getBuyerOrders(buyerId) {
       *,
       produce_listings:listing_id (
         name, produce_type, image_url
-      ),
-      seller:seller_id (
-        id, full_name, avatar_url, rating
       )
     `)
     .eq('buyer_id', buyerId)
@@ -168,9 +150,6 @@ export async function getSellerOrders(sellerId) {
       *,
       produce_listings:listing_id (
         name, produce_type
-      ),
-      buyer:buyer_id (
-        id, full_name, avatar_url, rating
       )
     `)
     .eq('seller_id', sellerId)
@@ -218,24 +197,26 @@ export async function rateProduceOrder(orderId, raterType, rating, review) {
   
   // Update profile rating (recalculate average)
   const targetUserId = raterType === 'buyer' ? order.seller_id : order.buyer_id;
-  await updateProfileRating(targetUserId);
+  await updateProfileRating(targetUserId, raterType);
   
   return data;
 }
 
-async function updateProfileRating(userId) {
+async function updateProfileRating(userId, raterType) {
   const { data: ratings, error } = await supabase
     .from('produce_orders')
     .select(raterType === 'buyer' ? 'seller_rating' : 'buyer_rating')
     .eq(raterType === 'buyer' ? 'seller_id' : 'buyer_id', userId)
     .not(raterType === 'buyer' ? 'seller_rating' : 'buyer_rating', 'is', null);
   
-  if (!error && ratings && ratings.length > 0) {
+  if (error) throw error;
+  if (ratings?.length) {
     const avgRating = ratings.reduce((sum, r) => sum + (raterType === 'buyer' ? r.seller_rating : r.buyer_rating), 0) / ratings.length;
-    await supabase
+    const { error: updateError } = await supabase
       .from('profiles')
       .update({ rating: parseFloat(avgRating.toFixed(1)), review_count: ratings.length })
       .eq('id', userId);
+    if (updateError) throw updateError;
   }
 }
 

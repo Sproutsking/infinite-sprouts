@@ -82,7 +82,7 @@ function LabsSection({ showToast }) {
   );
 
   return (
-    <div className="main">
+    <div className="main main-labs">
       <div className="sub-hd">
         {[['advisor', 'AI Advisor'], ['features', 'Features'], ['market', 'Market Data']].map(([k, l]) => (
           <button key={k} className={"sub-tab" + (tab === k ? ' on' : '')} onClick={() => setTab(k)}>{l}</button>

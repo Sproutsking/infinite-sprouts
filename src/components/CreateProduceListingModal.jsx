@@ -13,6 +13,7 @@ function CreateProduceListingModal({ open, onClose, onSuccess, showToast }) {
     name: '',
     description: '',
     produce_type: '',
+    quality_condition: '',
     price_per_unit: '',
     unit: 'kg',
     quantity_available: '',
@@ -41,6 +42,7 @@ function CreateProduceListingModal({ open, onClose, onSuccess, showToast }) {
   const validate = () => {
     if (!formData.name.trim()) return 'Produce name is required';
     if (!formData.produce_type) return 'Produce type is required';
+    if (!formData.quality_condition) return 'Produce condition is required';
     if (!formData.price_per_unit) return 'Price is required';
     if (isNaN(formData.price_per_unit) || formData.price_per_unit <= 0) return 'Price must be a positive number';
     if (!formData.quantity_available) return 'Quantity is required';
@@ -64,6 +66,7 @@ function CreateProduceListingModal({ open, onClose, onSuccess, showToast }) {
         name: formData.name,
         description: formData.description,
         produce_type: formData.produce_type,
+        quality_condition: formData.quality_condition,
         price_per_unit: parseFloat(formData.price_per_unit),
         unit: formData.unit,
         quantity_available: parseFloat(formData.quantity_available),
@@ -73,7 +76,7 @@ function CreateProduceListingModal({ open, onClose, onSuccess, showToast }) {
         certification: formData.certification,
         can_deliver: formData.can_deliver,
         delivery_radius_km: formData.can_deliver ? parseInt(formData.delivery_radius_km) : null,
-        expiry_date: formData.expiry_date,
+        expiry_date: formData.expiry_date || null,
         image_url: '🌿',
       };
 
@@ -83,7 +86,7 @@ function CreateProduceListingModal({ open, onClose, onSuccess, showToast }) {
       
       // Reset
       setFormData({
-        name: '', description: '', produce_type: '', price_per_unit: '',
+        name: '', description: '', produce_type: '', quality_condition: '', price_per_unit: '',
         unit: 'kg', quantity_available: '', state: '', lga: '',
         location_details: '', certification: '', can_deliver: false,
         delivery_radius_km: '10', expiry_date: '',
@@ -105,7 +108,7 @@ function CreateProduceListingModal({ open, onClose, onSuccess, showToast }) {
     : 0;
 
   return (
-    <Modal open={open} onClose={onClose} title="List Produce for Sale" wide sheet
+    <Modal open={open} onClose={onClose} title="List Produce for Sale" wide
       footer={
         <>
           <button className="btn btn-g" onClick={onClose}>Cancel</button>
@@ -115,7 +118,7 @@ function CreateProduceListingModal({ open, onClose, onSuccess, showToast }) {
         </>
       }>
       
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+      <div className="flex-columns">
         <div>
           <div className="form-g" style={{ marginBottom: 12 }}>
             <label className="label">Produce Name *</label>
@@ -128,6 +131,16 @@ function CreateProduceListingModal({ open, onClose, onSuccess, showToast }) {
               <select className="field" name="produce_type" value={formData.produce_type} onChange={handleChange}>
                 <option value="">Select type</option>
                 {produceTypes.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div className="form-g">
+              <label className="label">Condition *</label>
+              <select className="field" name="quality_condition" value={formData.quality_condition} onChange={handleChange}>
+                <option value="">Select condition</option>
+                <option value="fresh">Freshly harvested</option>
+                <option value="good">Good</option>
+                <option value="processing">Processing grade</option>
+                <option value="stored">Dried / stored</option>
               </select>
             </div>
             <div className="form-g">

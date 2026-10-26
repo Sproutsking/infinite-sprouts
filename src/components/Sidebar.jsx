@@ -2,9 +2,9 @@ import React from 'react';
 import I from '../icons/icons.jsx';
 import '../styles/sidebar.css';
 
-export default function Sidebar({ navItems, section, setSection }) {
+export default function Sidebar({ navItems, section, setSection, onCreatePost }) {
   return (
-    <nav className='sidebar sidebar-v2'>
+    <nav className='sidebar sidebar-v2' aria-label='Primary navigation'>
       <div className='nav-lbl'>Navigate</div>
       {navItems.map(item => (
         <button
@@ -18,14 +18,21 @@ export default function Sidebar({ navItems, section, setSection }) {
         </button>
       ))}
       <div className='nav-spacer' />
-      <div className='nav-div' />
-      <button
-        className={'nav-item nav-item-account' + (section === 'account' ? ' on' : '')}
-        onClick={() => setSection('account')}
-      >
-        <span className='nav-ico-wrap'><I.User/></span>
-        <span className='nav-item-text'>Account</span>
-      </button>
+      <div className='nav-bottom-group'>
+        <button type='button' className='nav-item nav-item-post' onClick={onCreatePost}>
+          <span className='nav-ico-wrap'><I.Plus/></span>
+          <span className='nav-item-text'>Post</span>
+        </button>
+        <div className='nav-div' role='separator' />
+        <button
+          type='button'
+          className={'nav-item nav-item-account' + (section === 'account' ? ' on' : '')}
+          onClick={() => setSection('account')}
+        >
+          <span className='nav-ico-wrap'><I.User/></span>
+          <span className='nav-item-text'>Account</span>
+        </button>
+      </div>
     </nav>
   );
 }

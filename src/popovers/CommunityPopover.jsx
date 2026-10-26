@@ -24,22 +24,28 @@ function CommunityPopover({community,open,onClose}){
   if(!open||!community||!ctx) return null;
   const {onToggleFollowCommunity,onGoCommunity}=ctx;
   const isFollowing=community.followed;
+  const isPending=community.pending;
+  const requiresApproval=community.privacy==='private'||community.joinApproval;
   return(
-    <div className={"profile-pop "+anchorClass} ref={ref} onClick={e=>e.stopPropagation()} style={{width:264}}>
-      <div style={{borderRadius:"var(--r12)",height:52,background:community.bg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,marginBottom:12,position:"relative",overflow:"hidden"}}>
-        <span style={{position:"relative",zIndex:1}}>{community.ico}</span>
+    <div className={"profile-pop community-popover "+anchorClass} ref={ref} onClick={e=>e.stopPropagation()}>
+      <div className="community-popover-cover" style={community.coverImageUrl?{backgroundImage:`url("${community.coverImageUrl}")`}:{background:community.bg}}>
+        <span className="community-popover-category"><I.Seedling/>{community.category||'General'}</span>
+        <span className="community-popover-mark">{community.ico}</span>
       </div>
-      <div className="pp-name" style={{marginBottom:2}}>{community.name}</div>
-      <div className="pp-stats" style={{marginBottom:10}}>
-        <span><b>{community.members?.toLocaleString()}</b> members</span>
-        <span><b>{community.posts}</b> posts</span>
-      </div>
-      {community.desc&&<div style={{fontSize:11.5,color:"var(--t3)",lineHeight:1.55,marginBottom:12}}>{community.desc.slice(0,90)}{community.desc.length>90?"…":""}</div>}
-      <div className="pp-acts">
-        <button className={"pp-btn"+(isFollowing?" following":" primary")} style={{flex:2}} onClick={()=>onToggleFollowCommunity(community.id)}>
-          {isFollowing?<><I.Check/>Following</>:<><I.Plus/>Follow</>}
-        </button>
-        <button className="pp-btn" style={{flex:1}} onClick={()=>{onGoCommunity(community.id);onClose();}}><I.Globe/>Open</button>
+      <div className="community-popover-content">
+        <div className="community-popover-name">{community.name}</div>
+        <div className="community-popover-access">{community.privacy==='private'?<I.Lock/>:<I.Globe/>}{community.privacy==='private'?'Private circle':'Open circle'}<i/>{requiresApproval?'Approval required':'Open joining'}</div>
+        <div className="community-popover-stats">
+          <span><b>{Number(community.members||0).toLocaleString()}</b> growers</span>
+          <span><b>{Number(community.posts||0).toLocaleString()}</b> field notes</span>
+        </div>
+        {community.desc&&<div className="community-popover-description">{community.desc.slice(0,110)}{community.desc.length>110?"…":""}</div>}
+        <div className="community-popover-actions">
+          <button className={"pp-btn"+(isFollowing?" following":" primary")} onClick={()=>onToggleFollowCommunity(community.id,isPending?false:undefined)}>
+            {isFollowing?<><I.Check/>Member</>:isPending?'Cancel request':<><I.Plus/>{requiresApproval?'Request to join':'Join circle'}</>}
+          </button>
+          <button className="pp-btn" onClick={()=>{onGoCommunity(community.id);onClose();}}><I.ArrowR/>Open</button>
+        </div>
       </div>
     </div>
   );

@@ -1,4 +1,5 @@
 import supabase from '../lib/supabaseClient.js';
+import { inclusiveCalendarDays, normalizeLaborService } from '../models/marketplaceModel.js';
 
 /**
  * LABOR MARKETPLACE SERVICE
@@ -42,28 +43,18 @@ export async function updateLaborService(serviceId, updates) {
 export async function getLaborService(serviceId) {
   const { data, error } = await supabase
     .from('labor_services')
-    .select(`
-      *,
-      profiles:worker_id (
-        id, full_name, avatar_url, rating, review_count, years_experience
-      )
-    `)
+    .select('*')
     .eq('id', serviceId)
     .single();
   
   if (error) throw error;
-  return data;
+  return normalizeLaborService(data);
 }
 
 export async function searchLaborServices(query, state = null, serviceType = null, limit = 50) {
   let queryBuilder = supabase
     .from('labor_services')
-    .select(`
-      *,
-      profiles:worker_id (
-        id, full_name, avatar_url, rating, review_count
-      )
-    `)
+    .select('*')
     .eq('status', 'active');
   
   if (state) {
@@ -79,11 +70,11 @@ export async function searchLaborServices(query, state = null, serviceType = nul
   }
   
   const { data, error } = await queryBuilder
-    .order('rating', { ascending: false })
+    .order('created_at', { ascending: false })
     .limit(limit);
   
   if (error) throw error;
-  return data || [];
+  return (data || []).map(normalizeLaborService);
 }
 
 export async function getWorkerServices(workerId) {
@@ -94,28 +85,18 @@ export async function getWorkerServices(workerId) {
     .order('created_at', { ascending: false });
   
   if (error) throw error;
-  return data || [];
+  return (data || []).map(normalizeLaborService);
 }
 
 export async function createLaborContract(contractData) {
-  // Calculate total contract value
-  const daysNeeded = Math.ceil((new Date(contractData.end_date) - new Date(contractData.start_date)) / (1000 * 60 * 60 * 24));
-  const totalValue = contractData.daily_rate * daysNeeded;
-  
-  const { data, error } = await supabase.from('labor_contracts').insert({
-    service_id: contractData.service_id,
-    farmer_id: contractData.farmer_id,
-    worker_id: contractData.worker_id,
-    contract_name: contractData.contract_name,
-    description: contractData.description,
-    daily_rate: contractData.daily_rate,
-    start_date: contractData.start_date,
-    end_date: contractData.end_date,
-    estimated_days: daysNeeded,
-    total_contract_value: totalValue,
-    payment_per_day: contractData.daily_rate,
-  }).select('*').single();
-  
+  inclusiveCalendarDays(contractData.start_date, contractData.end_date);
+  const { data, error } = await supabase.rpc('request_labor_contract', {
+    p_service_id: contractData.service_id,
+    p_start_date: contractData.start_date,
+    p_end_date: contractData.end_date,
+    p_contract_name: contractData.contract_name || null,
+    p_description: contractData.description || null,
+  });
   if (error) throw error;
   return data;
 }
@@ -123,18 +104,7 @@ export async function createLaborContract(contractData) {
 export async function getLaborContract(contractId) {
   const { data, error } = await supabase
     .from('labor_contracts')
-    .select(`
-      *,
-      labor_services:service_id (
-        service_name, service_type
-      ),
-      farmer:farmer_id (
-        id, full_name, avatar_url, rating
-      ),
-      worker:worker_id (
-        id, full_name, avatar_url, rating
-      )
-    `)
+    .select('*, labor_services:service_id(service_name, service_type)')
     .eq('id', contractId)
     .single();
   
@@ -145,15 +115,7 @@ export async function getLaborContract(contractId) {
 export async function getFarmerContracts(farmerId) {
   const { data, error } = await supabase
     .from('labor_contracts')
-    .select(`
-      *,
-      labor_services:service_id (
-        service_name, service_type
-      ),
-      worker:worker_id (
-        id, full_name, avatar_url, rating, review_count
-      )
-    `)
+    .select('*, labor_services:service_id(service_name, service_type)')
     .eq('farmer_id', farmerId)
     .order('created_at', { ascending: false });
   
@@ -164,15 +126,7 @@ export async function getFarmerContracts(farmerId) {
 export async function getWorkerContracts(workerId) {
   const { data, error } = await supabase
     .from('labor_contracts')
-    .select(`
-      *,
-      labor_services:service_id (
-        service_name, service_type
-      ),
-      farmer:farmer_id (
-        id, full_name, avatar_url, rating, review_count
-      )
-    `)
+    .select('*, labor_services:service_id(service_name, service_type)')
     .eq('worker_id', workerId)
     .order('created_at', { ascending: false });
   
@@ -181,104 +135,49 @@ export async function getWorkerContracts(workerId) {
 }
 
 export async function updateContractStatus(contractId, status) {
-  const { data, error } = await supabase
-    .from('labor_contracts')
-    .update({ status, updated_at: new Date().toISOString() })
-    .eq('id', contractId)
-    .select('*')
-    .single();
-  
+  const { data, error } = await supabase.rpc('respond_to_labor_contract', {
+    p_contract_id: contractId,
+    p_decision: status,
+  });
   if (error) throw error;
   return data;
 }
 
-export async function updateContractDaysCompleted(contractId, daysCompleted) {
-  const contract = await getLaborContract(contractId);
-  const totalPaid = daysCompleted * contract.payment_per_day;
-  
-  const updates = {
-    days_completed: daysCompleted,
-    payment_status: daysCompleted >= contract.estimated_days ? 'completed' : 'partial',
-    updated_at: new Date().toISOString(),
-  };
-  
-  const { data, error } = await supabase
-    .from('labor_contracts')
-    .update(updates)
-    .eq('id', contractId)
-    .select('*')
-    .single();
-  
+export async function reportLaborWorkday(contractId, daysReported) {
+  const { data, error } = await supabase.rpc('report_labor_workdays', {
+    p_contract_id: contractId,
+    p_days_reported: daysReported,
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function confirmLaborWorkday(contractId, daysCompleted) {
+  const { data, error } = await supabase.rpc('confirm_labor_workdays', {
+    p_contract_id: contractId,
+    p_days_completed: daysCompleted,
+  });
   if (error) throw error;
   return data;
 }
 
 export async function rateLaborContract(contractId, raterType, rating, review) {
-  const contract = await getLaborContract(contractId);
-  const updates = {};
-  
-  if (raterType === 'farmer') {
-    updates.farmer_rating = rating;
-    updates.farmer_review = review;
-  } else if (raterType === 'worker') {
-    updates.worker_rating = rating;
-    updates.worker_review = review;
-  }
-  
-  const { data, error } = await supabase
-    .from('labor_contracts')
-    .update({ ...updates, updated_at: new Date().toISOString() })
-    .eq('id', contractId)
-    .select('*')
-    .single();
-  
+  if (!['farmer', 'worker'].includes(raterType)) throw new Error('Invalid labor contract reviewer.');
+  const { data, error } = await supabase.rpc('rate_labor_contract', {
+    p_contract_id: contractId,
+    p_rating: rating,
+    p_review: review || null,
+  });
   if (error) throw error;
-  
-  // Update profile rating
-  const targetUserId = raterType === 'farmer' ? contract.worker_id : contract.farmer_id;
-  await updateWorkerProfileRating(targetUserId);
-  
   return data;
-}
-
-async function updateWorkerProfileRating(userId) {
-  const { data: ratings, error } = await supabase
-    .from('labor_contracts')
-    .select('farmer_rating, worker_rating')
-    .or(`farmer_id.eq.${userId},worker_id.eq.${userId}`)
-    .or(`farmer_rating.is.not.null,worker_rating.is.not.null`);
-  
-  if (!error && ratings && ratings.length > 0) {
-    let totalRating = 0;
-    let count = 0;
-    
-    ratings.forEach(r => {
-      if (r.farmer_rating) { totalRating += r.farmer_rating; count++; }
-      if (r.worker_rating) { totalRating += r.worker_rating; count++; }
-    });
-    
-    if (count > 0) {
-      const avgRating = totalRating / count;
-      await supabase
-        .from('profiles')
-        .update({ rating: parseFloat(avgRating.toFixed(1)), review_count: count })
-        .eq('id', userId);
-    }
-  }
 }
 
 export async function matchWorkersForFarm(farmId, skillsNeeded, state) {
   const { data, error } = await supabase
     .from('labor_services')
-    .select(`
-      *,
-      profiles:worker_id (
-        id, full_name, avatar_url, rating, review_count
-      )
-    `)
     .eq('status', 'active')
     .eq('state', state)
-    .order('rating', { ascending: false })
+    .order('created_at', { ascending: false })
     .limit(10);
   
   if (error) throw error;
@@ -287,7 +186,7 @@ export async function matchWorkersForFarm(farmId, skillsNeeded, state) {
   return (data || []).map(worker => {
     const matchedSkills = (worker.skills || []).filter(s => skillsNeeded.includes(s));
     return {
-      ...worker,
+      ...normalizeLaborService(worker),
       matchScore: (matchedSkills.length / skillsNeeded.length) * 100 + (worker.rating || 0),
     };
   }).sort((a, b) => b.matchScore - a.matchScore);
@@ -304,7 +203,8 @@ export default {
   getFarmerContracts,
   getWorkerContracts,
   updateContractStatus,
-  updateContractDaysCompleted,
+  reportLaborWorkday,
+  confirmLaborWorkday,
   rateLaborContract,
   matchWorkersForFarm,
 };

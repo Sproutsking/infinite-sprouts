@@ -64,7 +64,20 @@ export async function askAi(question, metadata = {}) {
 }
 
 export async function fetchProfiles() {
-  const { data, error } = await supabase.from('profiles').select('*').order('full_name', { ascending: true });
+  const { data, error } = await supabase.from('public_profiles').select('*').order('full_name', { ascending: true });
+  if (error) throw error;
+  return data || [];
+}
+
+export async function fetchProfilesByIds(userIds = []) {
+  const ids = [...new Set(userIds
+    .filter(id => typeof id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))
+    .map(String))];
+  if (!ids.length) return [];
+  const { data, error } = await supabase
+    .from('public_profiles')
+    .select('*')
+    .in('id', ids);
   if (error) throw error;
   return data || [];
 }
