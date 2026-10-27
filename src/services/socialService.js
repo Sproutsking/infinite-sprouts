@@ -46,6 +46,8 @@ export async function createCommunity(payload) {
     community_name: model.name,
     community_description: model.desc,
     community_icon: model.ico,
+    community_image_url: model.imageUrl || null,
+    community_cover_image_url: model.coverImageUrl || null,
   });
   if (error) throw error;
   return CommunityModel.fromPayload(data);
@@ -63,6 +65,7 @@ export async function updateCommunitySettings(communityId, settings) {
     new_posts_enabled: settings.postsEnabled,
     new_comments_enabled: settings.commentsEnabled,
     new_rules: settings.rules,
+    new_image_url: settings.imageUrl || null,
     new_cover_image_url: settings.coverImageUrl || null,
   });
   if (error) throw error;
@@ -78,7 +81,7 @@ export async function fetchPendingCommunityMembers(communityId) {
   if (error) throw error;
   if (!data?.length) return [];
   const profiles = await supabase.from('public_profiles')
-    .select('id, full_name, initials, avatar_url, role')
+    .select('id, full_name, initials, avatar_url, role, state, username')
     .in('id', data.map(member => member.user_id));
   if (profiles.error) throw profiles.error;
   const profileMap = Object.fromEntries((profiles.data || []).map(profile => [profile.id, profile]));

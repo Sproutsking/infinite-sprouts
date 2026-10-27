@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import I from '../../icons/icons.jsx';
 import { Av, Modal, Toggle } from '../../components/index.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
-import { updateProfile, uploadProfileAvatar } from '../../services/profileService.js';
+import { updateProfile, uploadProfileAvatar, uploadProfileBanner } from '../../services/profileService.js';
 import { updatePassword } from '../../services/authService.js';
 import { createDefaultUsername, isValidUsername, normalizeUsername } from '../../utils/username.js';
 
@@ -33,7 +33,11 @@ function AccountSection({ theme, setTheme, showToast, onOpenNotifications, onOpe
   const [avatarFile, setAvatarFile] = useState(null);
   const [avatarPreview, setAvatarPreview] = useState(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [bannerFile, setBannerFile] = useState(null);
+  const [bannerPreview, setBannerPreview] = useState(null);
+  const [uploadingBanner, setUploadingBanner] = useState(false);
   const fileInputRef = useRef(null);
+  const bannerInputRef = useRef(null);
 
   useEffect(() => {
     if (!profile) return;
@@ -47,6 +51,7 @@ function AccountSection({ theme, setTheme, showToast, onOpenNotifications, onOpe
     setStateName(profile.state || '');
     setDesc(profile.bio || '');
     setAvatarPreview(null);
+    setBannerPreview(null);
   }, [profile]);
 
   const isDirty = profile && (
@@ -107,6 +112,32 @@ function AccountSection({ theme, setTheme, showToast, onOpenNotifications, onOpe
     reader.readAsDataURL(file);
   }
 
+  function handleBannerChange(file) {
+    if (!file) return;
+    setBannerFile(file);
+    const reader = new FileReader();
+    reader.onload = () => setBannerPreview(reader.result);
+    reader.readAsDataURL(file);
+  }
+
+  async function saveBanner() {
+    if (!user?.id || !bannerFile) return;
+    setUploadingBanner(true);
+    try {
+      await uploadProfileBanner(user.id, bannerFile);
+      await refreshProfile();
+      setBannerFile(null);
+      setBannerPreview(null);
+      if (bannerInputRef.current) bannerInputRef.current.value = '';
+      showToast('ok', 'Profile banner updated!');
+    } catch (error) {
+      console.error('Banner upload error', error);
+      showToast('err', error.message || 'Unable to upload profile banner.');
+    } finally {
+      setUploadingBanner(false);
+    }
+  }
+
   async function savePassword() {
     if (!pwCurrent || !pwNew || !pwConfirm) {
       showToast('err', 'Please fill in all fields.');
@@ -142,6 +173,7 @@ function AccountSection({ theme, setTheme, showToast, onOpenNotifications, onOpe
       <div className="scroll">
         {tab === 'profile' && <>
           <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={e => handleAvatarChange(e.target.files?.[0])} />
+          <input ref={bannerInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={e => handleBannerChange(e.target.files?.[0])} />
           <div className="acc-hero">
             <div className="ah">
               <div style={{width:80,height:80,borderRadius:'var(--rf)',overflow:'hidden',background:'var(--as)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
@@ -157,6 +189,13 @@ function AccountSection({ theme, setTheme, showToast, onOpenNotifications, onOpe
               <button className="wc-btn" onClick={() => fileInputRef.current?.click()}><I.Edit/>Upload avatar</button>
               {avatarFile && <button className="wc-btn" onClick={saveAvatar} disabled={uploadingAvatar}><I.Check/>{uploadingAvatar ? ' Saving...' : 'Save avatar'}</button>}
               <button className="wc-btn"><I.Shield/>Verified</button>
+            </div>
+          </div>
+          <div className="profile-banner-editor" style={(bannerPreview || profile?.banner_url) ? { backgroundImage: `linear-gradient(90deg,rgba(7,16,10,.84),rgba(7,16,10,.25)),url("${bannerPreview || profile.banner_url}")` } : undefined}>
+            <div><strong>Profile banner</strong><span>Displayed at the top of your public profile</span></div>
+            <div className="profile-banner-controls">
+              <button className="wc-btn" onClick={() => bannerInputRef.current?.click()}><I.Edit/>Upload banner</button>
+              {bannerFile && <button className="wc-btn" onClick={saveBanner} disabled={uploadingBanner}><I.Check/>{uploadingBanner ? ' Saving...' : 'Save banner'}</button>}
             </div>
           </div>
           <div className="stat-row">

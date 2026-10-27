@@ -5,6 +5,7 @@ import ProgBar from './ProgBar.jsx';
 import { fmt } from '../utils/helpers.js';
 import farmService from '../services/farmService.js';
 import { useAuth } from '../context/AuthContext.jsx';
+import nigeriaLocations from 'nigeria-state-lga-data';
 
 function CreateFarmModal({ open, onClose, onSuccess, showToast, farm = null }) {
   const { user } = useAuth();
@@ -83,12 +84,15 @@ function CreateFarmModal({ open, onClose, onSuccess, showToast, farm = null }) {
     return () => { cancelled = true; };
   }, [open, farm]);
 
-  const states = ['Abia', 'Adamawa', 'Akwa Ibom', 'Bauchi', 'Bayelsa', 'Benue', 'Borno', 'Cross River', 'Delta', 'Ebonyi', 'Edo', 'Ekiti', 'Enugu', 'Federal Capital Territory', 'Gombe', 'Imo', 'Jigawa', 'Kaduna', 'Kano', 'Katsina', 'Kebbi', 'Kogi', 'Kwara', 'Lagos', 'Nasarawa', 'Niger', 'Ogun', 'Ondo', 'Osun', 'Oyo', 'Plateau', 'Rivers', 'Sokoto', 'Taraba', 'Yobe', 'Zamfara'];
+  const states = nigeriaLocations.getStates();
+  const localGovernmentAreas = formData.state ? nigeriaLocations.getLgas(formData.state) : [];
   const cropTypes = ['Maize', 'Rice', 'Cassava', 'Tomato', 'Pepper', 'Onion', 'Yam', 'Beans', 'Soybean', 'Wheat', 'Other'];
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFormData(prev => name === 'state'
+      ? { ...prev, state: value, lga: '' }
+      : { ...prev, [name]: value });
     setError('');
   };
 
@@ -250,7 +254,10 @@ function CreateFarmModal({ open, onClose, onSuccess, showToast, farm = null }) {
             </div>
             <div className="form-g">
               <label className="label">LGA *</label>
-              <input className="field" type="text" name="lga" placeholder="e.g., Ibadan" value={formData.lga} onChange={handleChange} />
+              <select className="field" name="lga" value={formData.lga} onChange={handleChange} disabled={!formData.state}>
+                <option value="">{formData.state ? 'Select local government' : 'Select a state first'}</option>
+                {localGovernmentAreas.map(lga => <option key={lga} value={lga}>{lga}</option>)}
+              </select>
             </div>
           </div>
 

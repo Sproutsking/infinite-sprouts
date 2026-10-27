@@ -17,8 +17,9 @@ import ReactionButton from '../../components/ReactionButton.jsx';
 import { socialActionError } from '../../utils/socialActionError.js';
 import { createDefaultUsername, isValidUsername, normalizeUsername } from '../../utils/username.js';
 import { fetchProfiles, fetchProfilesByIds } from '../../services/supabaseService.js';
+import { uploadSocialImage } from '../../services/profileService.js';
 import { fetchPosts, fetchCommentsForPosts, createPost, updatePost, setPostCommentsEnabled, deletePost as deletePostService, togglePostLike, sharePost, fetchLikedPostIds, fetchSaveCollections, fetchSavedPostMap, createSaveCollection, toggleSavedPost, fetchFeedPreferences, hidePost, setUserModeration, reportPost, reportComment, togglePinnedPost } from '../../services/postService.js';
-import { fetchCommunities, createCommunity, updateCommunitySettings, fetchPendingCommunityMembers, reviewCommunityMember, fetchFollowedUsers, toggleUserFollow, toggleCommunityFollow as toggleCommunityFollowService, toggleCommunityNotif as toggleCommunityNotifService } from '../../services/socialService.js';
+import { fetchCommunities, createCommunity, updateCommunitySettings, fetchPendingCommunityMembers, fetchCommunityMembers, reviewCommunityMember, fetchFollowedUsers, toggleUserFollow, toggleCommunityFollow as toggleCommunityFollowService, toggleCommunityNotif as toggleCommunityNotifService } from '../../services/socialService.js';
 
 function LinkSection({showToast,onGoToMessages,createPostRequest=0,onCommunityRightRailChange,onLinkStatsChange}){
   const { user, profile } = useAuth();
@@ -33,11 +34,19 @@ function LinkSection({showToast,onGoToMessages,createPostRequest=0,onCommunityRi
   const [following,setFollowing]=useState({});
   const [actionDialog,setActionDialog]=useState(null);
   const [compose,setCompose]=useState("");
+  const [composeImageFile,setComposeImageFile]=useState(null);
+  const [composeImagePreview,setComposeImagePreview]=useState('');
+  const [composeLocation,setComposeLocation]=useState(null);
+  const [emojiPickerOpen,setEmojiPickerOpen]=useState(false);
   const [reqCommOpen,setReqCommOpen]=useState(false);
   const [newCommunityName,setNewCommunityName]=useState('');
   const [newCommunityFocus,setNewCommunityFocus]=useState('');
   const [newCommunityDesc,setNewCommunityDesc]=useState('');
   const [newCommunityIcon,setNewCommunityIcon]=useState('🌱');
+  const [newCommunityImageFile,setNewCommunityImageFile]=useState(null);
+  const [newCommunityImagePreview,setNewCommunityImagePreview]=useState('');
+  const [newCommunityCoverFile,setNewCommunityCoverFile]=useState(null);
+  const [newCommunityCoverPreview,setNewCommunityCoverPreview]=useState('');
   const [creatingCommunity,setCreatingCommunity]=useState(false);
   const [communityCreateError,setCommunityCreateError]=useState('');
   const [postCreateError,setPostCreateError]=useState('');
@@ -54,6 +63,7 @@ function LinkSection({showToast,onGoToMessages,createPostRequest=0,onCommunityRi
   const [loading,setLoading]=useState(true);
   const filterRef=useRef(null);
   const composeInputRef=useRef(null);
+  const composeImageInputRef=useRef(null);
 
   useEffect(() => {
     if (!loading) onLinkStatsChange?.({ posts: posts.length, communities: communities.length });
@@ -112,6 +122,7 @@ function LinkSection({showToast,onGoToMessages,createPostRequest=0,onCommunityRi
             joined: item.joined || '',
             avatar_url: item.avatar_url || item.avatarUrl || item.photo_url || null,
             avatarUrl: item.avatar_url || item.avatarUrl || item.photo_url || null,
+            bannerUrl: item.banner_url || item.bannerUrl || null,
           };
         };
 
@@ -124,8 +135,10 @@ function LinkSection({showToast,onGoToMessages,createPostRequest=0,onCommunityRi
           likes: p.likes || 0,
           comments: p.comments || 0,
           shares: p.shares || 0,
+          commentsEnabled: p.commentsEnabled !== false && p.comments_enabled !== false,
           communityId: p.community_id || p.communityId || null,
           image: p.image || p.media || null,
+          location: p.location || null,
           pinnedAt: p.pinned_at || p.pinnedAt || null,
         }));
 
@@ -167,11 +180,18 @@ function LinkSection({showToast,onGoToMessages,createPostRequest=0,onCommunityRi
             joined: profile.joined || '',
             avatar_url: profile.avatar_url || null,
             avatarUrl: profile.avatar_url || null,
+            bannerUrl: profile.banner_url || null,
           };
+          const [imageUrl, coverImageUrl] = await Promise.all([
+            newCommunityImageFile ? uploadSocialImage(currentUserId, newCommunityImageFile, 'community-logo') : Promise.resolve(''),
+            newCommunityCoverFile ? uploadSocialImage(currentUserId, newCommunityCoverFile, 'community-banner') : Promise.resolve(''),
+          ]);
         }
 
         authorIds.forEach(id => {
           if (!profileMap[id]) {
+            imageUrl,
+            coverImageUrl,
             profileMap[id] = {
               id,
               name: 'Member',
@@ -258,7 +278,7 @@ function LinkSection({showToast,onGoToMessages,createPostRequest=0,onCommunityRi
   }
 
   async function submitPost(communityId){
-    if(!compose.trim()) return;
+    if(!compose.trim()&&!composeImageFile) return;
     if(!currentUserId){
       showToast('error','Please sign in to publish posts.');
       return;
@@ -277,7 +297,9 @@ function LinkSection({showToast,onGoToMessages,createPostRequest=0,onCommunityRi
       created_at:new Date().toISOString(),
     };
     try {
-      const newPost = await createPost(payload);
+      const imageUrl=composeImageFile?await uploadSocialImage(currentUserId,composeImageFile,'post-image'):null;
+      const location=composeLocation?.trim()||null;
+      const newPost = await createPost({...payload,image:imageUrl,location});
       const formatted = {
         id: newPost.id,
         authorId: newPost.authorId || profile?.id || user?.id,
@@ -289,9 +311,14 @@ function LinkSection({showToast,onGoToMessages,createPostRequest=0,onCommunityRi
         shares: newPost.shares || 0,
         communityId: newPost.communityId || communityId || null,
         image: newPost.image || null,
+        location: newPost.location || location,
       };
       setPosts(p => upsertUniquePost(p, formatted));
       setCompose("");
+      setComposeImageFile(null);
+      setComposeImagePreview('');
+      setComposeLocation(null);
+      setEmojiPickerOpen(false);
       if(communityId){
         setCommunities(p=>p.map(c=>c.id===communityId?{...c,posts:(c.posts||0)+1}:c));
       } else {
@@ -397,10 +424,16 @@ function LinkSection({showToast,onGoToMessages,createPostRequest=0,onCommunityRi
     }
     setCreatingCommunity(true);
     try {
+      const [imageUrl, coverImageUrl] = await Promise.all([
+        newCommunityImageFile ? uploadSocialImage(currentUserId, newCommunityImageFile, 'community-logo') : Promise.resolve(''),
+        newCommunityCoverFile ? uploadSocialImage(currentUserId, newCommunityCoverFile, 'community-banner') : Promise.resolve(''),
+      ]);
       const community = await createCommunity({
         name: newCommunityName.trim(),
         desc: [newCommunityFocus.trim(), newCommunityDesc.trim()].filter(Boolean).join(' · '),
         ico: newCommunityIcon,
+        imageUrl,
+        coverImageUrl,
         members: 1,
         posts: 0,
         followed: true,
@@ -411,6 +444,10 @@ function LinkSection({showToast,onGoToMessages,createPostRequest=0,onCommunityRi
       setNewCommunityFocus('');
       setNewCommunityDesc('');
       setNewCommunityIcon('🌱');
+      setNewCommunityImageFile(null);
+      setNewCommunityImagePreview('');
+      setNewCommunityCoverFile(null);
+      setNewCommunityCoverPreview('');
       setReqCommOpen(false);
       setPage({ type: 'community', communityId: community.id });
       showToast('ok','Community created successfully!');
@@ -703,13 +740,15 @@ function LinkSection({showToast,onGoToMessages,createPostRequest=0,onCommunityRi
             <div className="gvp-media-wrap">
               <div className="gvp-cinematic"/>
               <div className="gvp-slide show" style={{aspectRatio:"16/9"}}>
-                <div className="post-img">{p.image}</div>
+                <div className="post-img">{/^https?:\/\//i.test(p.image)?<img src={p.image} alt="Post attachment" loading="lazy"/>:p.image}</div>
               </div>
             </div>:
             <div className="gvp-text-only">
               <div className="post-body">{p.body}</div>
             </div>
           }
+          {p.image&&p.body&&<div className="post-body">{p.body}</div>}
+          {p.location&&<div className="post-location"><I.Map/>{p.location}</div>}
           {p.tags&&p.tags.length>0&&(
             <div className="post-tags">
               {p.tags.map(t=><span key={t} className="post-tag">#{t}</span>)}
@@ -738,7 +777,7 @@ function LinkSection({showToast,onGoToMessages,createPostRequest=0,onCommunityRi
   if(page.type==="community"){
     const community=communities.find(c=>c.id===page.communityId);
     const commPosts=posts.filter(p=>p.communityId===page.communityId&&!hiddenPostIds.includes(String(p.id))&&!mutedUserIds.includes(String(p.authorId))&&!blockedUserIds.includes(String(p.authorId)));
-    return <><SocialCtx.Provider value={socialCtxValue}><CommunityFeed community={community} users={users} posts={commPosts} onBack={goFeed} onToggleFollow={toggleFollowCommunity} onToggleNotif={toggleNotif} onRightRailChange={onCommunityRightRailChange} PostCardComp={PostCard} showToast={showToast} onUpdateCommunity={async (communityId, settings) => { const updated = await updateCommunitySettings(communityId, settings); setCommunities(previous => previous.map(item => item.id === communityId ? { ...item, ...updated } : item)); return updated; }} onReviewMember={reviewCommunityMember} onFetchPendingMembers={fetchPendingCommunityMembers} onNewPost={(newPost) => {
+    return <><SocialCtx.Provider value={socialCtxValue}><CommunityFeed community={community} users={users} posts={commPosts} onBack={goFeed} onGoProfile={goProfile} onFetchCommunityMembers={fetchCommunityMembers} onToggleFollow={toggleFollowCommunity} onToggleNotif={toggleNotif} onRightRailChange={onCommunityRightRailChange} PostCardComp={PostCard} showToast={showToast} onUpdateCommunity={async (communityId, settings) => { const updated = await updateCommunitySettings(communityId, settings); setCommunities(previous => previous.map(item => item.id === communityId ? { ...item, ...updated } : item)); return updated; }} onReviewMember={reviewCommunityMember} onFetchPendingMembers={fetchPendingCommunityMembers} onNewPost={(newPost) => {
       setCommunities(prev => prev.map(c => c.id === community.id ? { ...c, posts: (c.posts || 0) + 1 } : c));
       setPosts(prev => upsertUniquePost(prev, newPost));
     }}/></SocialCtx.Provider>{actionDialogElement}{actionPanels}</>;
@@ -779,11 +818,15 @@ function LinkSection({showToast,onGoToMessages,createPostRequest=0,onCommunityRi
         {tab==="create"&&<div style={{maxWidth:560}}>
           <p className="subsh">Share knowledge, updates, or job opportunities with the farming community.</p>
           {postCreateError&&<div className="notice social-action-error" role="alert"><I.Info/><span>{postCreateError}</span></div>}
+          <input ref={composeImageInputRef} type="file" accept="image/*" hidden onChange={event=>{const file=event.target.files?.[0];if(!file)return;setComposeImageFile(file);const reader=new FileReader();reader.onload=()=>setComposeImagePreview(reader.result);reader.readAsDataURL(file);}}/>
           <div className="compose-box">
             <div style={{display:"flex",gap:10,marginBottom:10}}>
               <Av initials={profile?.initials || 'YO'} size="lg" green src={profile?.avatar_url}/>
               <textarea ref={composeInputRef} className="compose-input" placeholder="What is happening on your farm? Use #hashtags to tag topics." value={compose} onChange={e=>{setCompose(e.target.value);setPostCreateError('');}} rows={4}/>
             </div>
+            {composeImagePreview&&<div className="compose-attachment-preview"><img src={composeImagePreview} alt="Post attachment preview"/><button className="ib" type="button" title="Remove image" aria-label="Remove image" onClick={()=>{setComposeImageFile(null);setComposeImagePreview('');if(composeImageInputRef.current)composeImageInputRef.current.value='';}}><I.X/></button></div>}
+            {composeLocation!==null&&<div className="compose-location-field"><I.Map/><input className="field" aria-label="Post location" placeholder="Add a place or area" value={composeLocation} onChange={event=>setComposeLocation(event.target.value)}/><button className="ib" type="button" title="Remove location" aria-label="Remove location" onClick={()=>setComposeLocation(null)}><I.X/></button></div>}
+            {emojiPickerOpen&&<div className="compose-emoji-picker" role="group" aria-label="Choose an emoji">{['🌱','🌾','🌿','🌻','🌽','🍅','🌧️','☀️','💧','🚜','📈','💡','👏','❤️','😊','🔥'].map(emoji=><button key={emoji} type="button" aria-label={`Insert ${emoji}`} onClick={()=>setCompose(value=>value+emoji)}>{emoji}</button>)}</div>}
             {/* Live hashtag preview */}
             {(compose.match(/#([a-zA-Z0-9_]+)/g)||[]).length>0&&(
               <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:10,paddingTop:8,borderTop:"1px solid var(--bd)"}}>
@@ -794,10 +837,12 @@ function LinkSection({showToast,onGoToMessages,createPostRequest=0,onCommunityRi
               </div>
             )}
             <div className="compose-foot">
-              <div style={{display:"flex",gap:4}}>
-                {[I.Image,I.Map,I.Globe].map((IC,i)=><button key={i} className="ib"><IC/></button>)}
+              <div className="compose-tools">
+                <button className="ib" type="button" title="Add an image" aria-label="Add an image" onClick={()=>composeImageInputRef.current?.click()}><I.Image/></button>
+                <button className={'ib'+(composeLocation!==null?' active':'')} type="button" title="Add a location" aria-label="Add a location" onClick={()=>setComposeLocation(value=>value===null?'':null)}><I.Map/></button>
+                <button className={'ib'+(emojiPickerOpen?' active':'')} type="button" title="Add emoji" aria-label="Add emoji" onClick={()=>setEmojiPickerOpen(value=>!value)}>😊</button>
               </div>
-              <button className="btn btn-p" onClick={()=>submitPost(null)} disabled={!compose.trim() || (!profile?.id && !user?.id)}><I.Send/>Publish</button>
+              <button className="btn btn-p" onClick={()=>submitPost(null)} disabled={(!compose.trim()&&!composeImageFile) || (!profile?.id && !user?.id)}><I.Send/>Publish</button>
             </div>
           </div>
           <div className="notice ni"><I.Info/><span>Type #hashtags anywhere in your post — they will be automatically extracted as tags when you publish.</span></div>
@@ -818,12 +863,12 @@ function LinkSection({showToast,onGoToMessages,createPostRequest=0,onCommunityRi
                   <div className="comm-banner" style={c.coverImageUrl?{backgroundImage:`url("${c.coverImageUrl}")`}:{background:c.bg}}>
                     <span className="comm-card-category"><I.Seedling/>{c.category||'General'}</span>
                     <span className="comm-card-privacy">{c.privacy==='private'?<I.Lock/>:<I.Globe/>}{c.privacy==='private'?'Private':'Open'}</span>
-                    <span className="comm-card-mark">{c.ico}</span>
+                    <span className="comm-card-mark">{c.imageUrl?<img src={c.imageUrl} alt=""/>:c.ico}</span>
                   </div>
                   <div className="comm-body">
                     <div className="comm-name">{c.name}</div>
                     <div className="comm-description">{c.desc||'A community for sharing growing knowledge and local insight.'}</div>
-                    <div className="comm-meta"><span><I.Users/>{Number(c.members||0).toLocaleString()} members</span><span><I.Comment/>{Number(c.posts||0).toLocaleString()} posts</span></div>
+                    <div className="comm-stats"><span className="comm-stat"><I.Users/><strong>{Number(c.members||0).toLocaleString()}</strong><small>Members</small></span><span className="comm-stat"><I.Comment/><strong>{Number(c.posts||0).toLocaleString()}</strong><small>Posts</small></span></div>
                   </div>
                 </button>
                 <div className="comm-card-actions">
@@ -836,31 +881,21 @@ function LinkSection({showToast,onGoToMessages,createPostRequest=0,onCommunityRi
             })}
           </div>
 
-          <div className="sh">Featured Members</div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(165px,1fr))",gap:8}}>
-            {Object.values(users).filter(u=>String(u.id)!==String(currentUserId)).map(u=>(
-              <div key={u.id} className="card card-p" style={{textAlign:"center",cursor:"pointer"}} onClick={()=>goProfile(u.id)}>
-                <div style={{display:"flex",justifyContent:"center",marginBottom:8}}><Av initials={u.initials} size="lg" green src={u.avatarUrl}/></div>
-                <div style={{fontWeight:700,fontSize:12.5,color:"var(--t1)",marginBottom:2}}>{u.name}</div>
-                <div style={{fontSize:11,color:"var(--t4)",marginBottom:9}}>{u.role}</div>
-                <div style={{display:"flex",gap:4}} onClick={e=>e.stopPropagation()}>
-                  <button className={"btn btn-sm"+(following[u.id]?" btn-g":" btn-p")} style={{flex:1}} onClick={()=>toggleFollow(u.id)}>{following[u.id]?"Following":"Follow"}</button>
-                  <button className="btn btn-g btn-sm" onClick={()=>handleDM(u)}><I.Msg/></button>
-                </div>
-              </div>
-            ))}
-          </div>
         </>}
       </div>
 
       {/* Request community */}
-      <Modal open={reqCommOpen} onClose={()=>{setReqCommOpen(false);setCommunityCreateError('');setNewCommunityName('');setNewCommunityFocus('');setNewCommunityDesc('');setNewCommunityIcon('🌱');}} title="Create a Community"
-        footer={<><button className="btn btn-g" onClick={()=>{setReqCommOpen(false);setCommunityCreateError('');setNewCommunityName('');setNewCommunityFocus('');setNewCommunityDesc('');setNewCommunityIcon('🌱');}}>Cancel</button><button className="btn btn-p" onClick={submitCommunityRequest} disabled={creatingCommunity||!newCommunityName.trim()}><I.Check/>{creatingCommunity ? 'Creating...' : 'Create Community'}</button></>}>
+      <Modal open={reqCommOpen} onClose={()=>{setReqCommOpen(false);setCommunityCreateError('');setNewCommunityName('');setNewCommunityFocus('');setNewCommunityDesc('');setNewCommunityIcon('🌱');setNewCommunityImageFile(null);setNewCommunityImagePreview('');setNewCommunityCoverFile(null);setNewCommunityCoverPreview('');}} title="Create a Community"
+        footer={<><button className="btn btn-g" onClick={()=>{setReqCommOpen(false);setCommunityCreateError('');setNewCommunityName('');setNewCommunityFocus('');setNewCommunityDesc('');setNewCommunityIcon('🌱');setNewCommunityImageFile(null);setNewCommunityImagePreview('');setNewCommunityCoverFile(null);setNewCommunityCoverPreview('');}}>Cancel</button><button className="btn btn-p" onClick={submitCommunityRequest} disabled={creatingCommunity||!newCommunityName.trim()}><I.Check/>{creatingCommunity ? 'Creating...' : 'Create Community'}</button></>}>
         <div className="notice nw"><I.Info/><span>A community is created for your signed-in account. If setup or permissions block it, the error will appear here.</span></div>
         {communityCreateError&&<div className="notice social-action-error" role="alert"><I.Info/><span>{communityCreateError}</span></div>}
         <div className="form-g"><label className="label">Community Name</label><input className="field" placeholder="e.g. Nigerian Maize Growers" value={newCommunityName} onChange={e=>{setNewCommunityName(e.target.value);setCommunityCreateError('');}}/></div>
         <div className="form-g"><label className="label">Focus Area</label><input className="field" placeholder="e.g. Maize, Irrigation, AgriTech…" value={newCommunityFocus} onChange={e=>setNewCommunityFocus(e.target.value)}/></div>
         <div className="form-g"><label className="label">Community Icon</label><input className="field" placeholder="Emoji icon" value={newCommunityIcon} onChange={e=>setNewCommunityIcon(e.target.value)}/></div>
+        <div className="form-row">
+          <div className="form-g"><label className="label">Community profile image</label><input className="field" type="file" accept="image/*" onChange={e=>{const file=e.target.files?.[0];if(!file)return;setNewCommunityImageFile(file);const reader=new FileReader();reader.onload=()=>setNewCommunityImagePreview(reader.result);reader.readAsDataURL(file);}}/>{newCommunityImagePreview&&<img className="community-image-preview" src={newCommunityImagePreview} alt="Community profile preview"/>}</div>
+          <div className="form-g"><label className="label">Community banner</label><input className="field" type="file" accept="image/*" onChange={e=>{const file=e.target.files?.[0];if(!file)return;setNewCommunityCoverFile(file);const reader=new FileReader();reader.onload=()=>setNewCommunityCoverPreview(reader.result);reader.readAsDataURL(file);}}/>{newCommunityCoverPreview&&<img className="community-banner-preview" src={newCommunityCoverPreview} alt="Community banner preview"/>}</div>
+        </div>
         <div className="form-g"><label className="label">Description</label><textarea className="field textarea" placeholder="What is this community about?" value={newCommunityDesc} onChange={e=>setNewCommunityDesc(e.target.value)}/></div>
       </Modal>
 

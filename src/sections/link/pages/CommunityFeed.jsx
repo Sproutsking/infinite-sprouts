@@ -3,12 +3,18 @@ import I from '../../../icons/icons.jsx';
 import { Av, Modal } from '../../../components/index.jsx';
 import { useAuth } from '../../../context/AuthContext.jsx';
 import { createPost } from '../../../services/postService.js';
+import { uploadSocialImage } from '../../../services/profileService.js';
 import { socialActionError } from '../../../utils/socialActionError.js';
 
-function CommunityFeed({community,users,posts,onBack,onToggleFollow,onToggleNotif,onRightRailChange,PostCardComp,onNewPost,onUpdateCommunity,onReviewMember,onFetchPendingMembers,showToast}){
+function CommunityFeed({community,users,posts,onBack,onGoProfile,onToggleFollow,onToggleNotif,onRightRailChange,PostCardComp,onNewPost,onUpdateCommunity,onReviewMember,onFetchPendingMembers,onFetchCommunityMembers,showToast}){
   const { user, profile } = useAuth();
   const [composerOpen,setComposerOpen]=useState(false);
   const [compose,setCompose]=useState("");
+  const [composeImageFile,setComposeImageFile]=useState(null);
+  const [composeImagePreview,setComposeImagePreview]=useState('');
+  const [composeLocation,setComposeLocation]=useState(null);
+  const [emojiPickerOpen,setEmojiPickerOpen]=useState(false);
+  const composeImageInputRef=React.useRef(null);
   const [postError,setPostError]=useState('');
   const [localPosts,setLocalPosts]=useState(posts);
   const [activeView,setActiveView]=useState('feed');
@@ -20,6 +26,10 @@ function CommunityFeed({community,users,posts,onBack,onToggleFollow,onToggleNoti
   const [savingSettings,setSavingSettings]=useState(false);
   const [pendingMembers,setPendingMembers]=useState([]);
   const [loadingMembers,setLoadingMembers]=useState(false);
+  const [communityMembers,setCommunityMembers]=useState([]);
+  const [loadingCommunityMembers,setLoadingCommunityMembers]=useState(false);
+  const [memberSearch,setMemberSearch]=useState('');
+  const [memberSort,setMemberSort]=useState('newest');
   const currentUserId=profile?.id||user?.id;
   const isOwner=Boolean(community?.ownerId&&currentUserId&&String(community.ownerId)===String(currentUserId));
   const categoryHue={Crops:108,Livestock:38,Equipment:65,Market:145,Research:190,Jobs:275,Local:88};
@@ -30,6 +40,16 @@ function CommunityFeed({community,users,posts,onBack,onToggleFollow,onToggleNoti
     setPostError('');
     setComposerOpen(true);
   }
+  function closeComposer(){
+    setComposerOpen(false);
+    setCompose('');
+    setComposeImageFile(null);
+    setComposeImagePreview('');
+    setComposeLocation(null);
+    setEmojiPickerOpen(false);
+    setPostError('');
+    if(composeImageInputRef.current) composeImageInputRef.current.value='';
+  }
 
 
   useEffect(()=>{
@@ -38,6 +58,7 @@ function CommunityFeed({community,users,posts,onBack,onToggleFollow,onToggleNoti
       name:community.name,
       desc:community.desc,
       ico:community.ico,
+      imageUrl:community.imageUrl,
       category:community.category,
       privacy:community.privacy,
       joinApproval:community.joinApproval,
@@ -49,6 +70,29 @@ function CommunityFeed({community,users,posts,onBack,onToggleFollow,onToggleNoti
   },[community]);
 
   useEffect(()=>setActiveView('feed'),[community?.id]);
+
+  const canReadMembers=Boolean(currentUserId&&(community?.privacy!=='private'||community?.followed||isOwner));
+  const visibleCommunityMembers=communityMembers
+    .filter(member=>{
+      const profile=member.profile||{};
+      const query=memberSearch.trim().toLocaleLowerCase();
+      return !query||[profile.full_name,profile.username,profile.role,profile.state].filter(Boolean).join(' ').toLocaleLowerCase().includes(query);
+    })
+    .sort((a,b)=>{
+      if(memberSort==='name') return (a.profile?.full_name||'').localeCompare(b.profile?.full_name||'');
+      const difference=new Date(a.created_at||0)-new Date(b.created_at||0);
+      return memberSort==='oldest'?difference:-difference;
+    });
+  useEffect(()=>{
+    if(activeView!=='members'||!community||!canReadMembers) return undefined;
+    let active=true;
+    setLoadingCommunityMembers(true);
+    onFetchCommunityMembers?.(community.id)
+      .then(members=>{if(active)setCommunityMembers(members||[]);})
+      .catch(error=>showToast?.('error',error.message||'Unable to load community members.'))
+      .finally(()=>{if(active)setLoadingCommunityMembers(false);});
+    return()=>{active=false;};
+  },[activeView,community?.id,canReadMembers,onFetchCommunityMembers,showToast]);
 
   useEffect(()=>{
     if(!community){
@@ -106,7 +150,7 @@ function CommunityFeed({community,users,posts,onBack,onToggleFollow,onToggleNoti
     }catch(error){showToast?.('error',error.message||'Unable to review member request.');}
   }
   async function submitPost(){
-    if(!compose.trim()) return;
+    if(!compose.trim()&&!composeImageFile) return;
     if(!currentUserId){
       const message='Sign in to publish in this community.';
       setPostError(message);
@@ -114,7 +158,9 @@ function CommunityFeed({community,users,posts,onBack,onToggleFollow,onToggleNoti
       return;
     }
     if(!community.followed&&!isOwner){
-      const message='Join this community before publishing a post.';
+      const imageUrl=composeImageFile?await uploadSocialImage(currentUserId,composeImageFile,'post-image'):null;
+      const location=composeLocation?.trim()||null;
+      const savedPost = await createPost({...payload,image:imageUrl,location});
       setPostError(message);
       showToast?.('error', message);
       return;
@@ -153,9 +199,16 @@ function CommunityFeed({community,users,posts,onBack,onToggleFollow,onToggleNoti
         shares: savedPost.shares || 0,
         communityId: savedPost.communityId || community.id,
         image: savedPost.image || null,
+        location: savedPost.location || location,
+        commentsEnabled: savedPost.commentsEnabled !== false,
       };
       setLocalPosts(p => [formatted, ...p.filter(item => item.id !== formatted.id)]);
       setCompose("");
+      setComposeImageFile(null);
+      setComposeImagePreview('');
+      setComposeLocation(null);
+      setEmojiPickerOpen(false);
+      if(composeImageInputRef.current) composeImageInputRef.current.value='';
       setComposerOpen(false);
       if(onNewPost) onNewPost(formatted);
       showToast?.('ok', 'Community post published.');
@@ -195,7 +248,7 @@ function CommunityFeed({community,users,posts,onBack,onToggleFollow,onToggleNoti
             <span>INFINITE SPROUTS <i/> FIELD NETWORK</span>
             <h1>{community.name}</h1>
           </div>
-          <div className="community-mark" aria-hidden="true">{community.ico}</div>
+          <div className="community-mark" aria-hidden="true">{community.imageUrl?<img src={community.imageUrl} alt=""/>:community.ico}</div>
         </div>
         <div className="community-profile">
         <div className="community-profile-main">
@@ -222,16 +275,11 @@ function CommunityFeed({community,users,posts,onBack,onToggleFollow,onToggleNoti
         <div className="community-view-tabs" role="tablist" aria-label="Community sections">
         <button className={activeView==='feed'?'active':''} role="tab" aria-selected={activeView==='feed'} onClick={()=>setActiveView('feed')}><I.Comment/>Field notes<span>{localPosts.length}</span></button>
         <button className={activeView==='about'?'active':''} role="tab" aria-selected={activeView==='about'} onClick={()=>setActiveView('about')}><I.Info/>The circle</button>
+        <button className={activeView==='members'?'active':''} role="tab" aria-selected={activeView==='members'} onClick={()=>setActiveView('members')}><I.Users/>Members<span>{Number(community.members||0).toLocaleString()}</span></button>
         {isOwner&&<button className={activeView==='manage'?'active':''} role="tab" aria-selected={activeView==='manage'} onClick={()=>setActiveView('manage')}><I.Settings/>Steward tools{pendingMembers.length>0&&<span>{pendingMembers.length}</span>}</button>}
         </div>
 
         {activeView==='feed'&&<div className="community-content">
-        {!community.followed&&!isOwner&&!community.pending&&<div className="community-join-callout">
-          <div className="community-join-icon">{community.privacy==='private'?<I.Lock/>:<I.Users/>}</div>
-          <div className="community-join-copy"><strong>Join the conversation</strong><span>{community.privacy==='private'||community.joinApproval?'Request access to see member posts and share your own updates.':'Join this community to post, follow activity, and connect with growers.'}</span></div>
-          <button className="btn btn-p btn-sm" onClick={()=>onToggleFollow(community.id)}><I.Plus/>{community.privacy==='private'||community.joinApproval?'Request access':'Join'}</button>
-        </div>}
-        {community.pending&&!isOwner&&<div className="community-join-callout pending"><div className="community-join-icon"><I.Check/></div><div className="community-join-copy"><strong>Request awaiting approval</strong><span>The community owner will review your request.</span></div><button className="btn btn-g btn-sm" onClick={()=>onToggleFollow(community.id,false)}>Cancel</button></div>}
         {(community.followed||isOwner)&&community.postsEnabled&&<button className="community-composer-prompt" onClick={openComposer}>
           <Av initials={profile?.initials||'US'} size="md" src={profile?.avatar_url}/>
           <span>Share something with {community.name}…</span>
@@ -247,6 +295,24 @@ function CommunityFeed({community,users,posts,onBack,onToggleFollow,onToggleNoti
             localPosts.map(p=><PostCardComp key={p.id} p={p}/>)
           }
         </div>:<div className="community-locked-feed"><span className="community-locked-icon">{community.pending?<I.Check/>:<I.Lock/>}</span><strong>{community.pending?'Your request is being reviewed':'Member posts are private'}</strong><span>{community.pending?'The owner will approve your access request.':'Request access to read discussions and share with this community.'}</span></div>}
+        </div>}
+
+        {activeView==='members'&&<div className="community-content">
+          <div className="community-members-heading"><div><span className="community-eyebrow">PEOPLE IN THIS CIRCLE</span><h2>Community members</h2></div><span>{Number(community.members||communityMembers.length).toLocaleString()} members</span></div>
+          {!canReadMembers?<div className="community-locked-feed"><span className="community-locked-icon">{currentUserId?<I.Lock/>:<I.User/>}</span><strong>{currentUserId?'Members are private':'Sign in to view members'}</strong><span>{currentUserId?'Join this community to see its member directory.':'Sign in to explore people in this community.'}</span></div>:loadingCommunityMembers?<div className="community-empty-state">Loading members…</div>:communityMembers.length===0?<div className="community-empty"><div className="community-empty-orbit"><I.Users/></div><span className="community-eyebrow">YOUR CIRCLE STARTS HERE</span><h2>No members to show yet</h2><p>Approved community members will appear here.</p></div>:<div className="community-members-grid">
+            <div className="community-members-tools"><input className="field" type="search" aria-label="Search members" placeholder="Search name, role, or state" value={memberSearch} onChange={event=>setMemberSearch(event.target.value)}/><select className="field" aria-label="Sort members" value={memberSort} onChange={event=>setMemberSort(event.target.value)}><option value="newest">Recently joined</option><option value="oldest">Earliest members</option><option value="name">Name A-Z</option></select></div>
+            {visibleCommunityMembers.length===0?<div className="community-empty-state">No members match that search.</div>:visibleCommunityMembers.map(member=>{
+              const memberProfile=member.profile||{};
+              const memberName=memberProfile.full_name||'Community member';
+              return <button className="community-member-card" type="button" key={member.user_id} onClick={()=>onGoProfile?.(member.user_id)}>
+                <Av initials={memberProfile.initials||memberName.split(/\s+/).map(part=>part[0]).join('').slice(0,2).toUpperCase()} size="lg" src={memberProfile.avatar_url}/>
+                <strong>{memberName}</strong>
+                <span>{member.role==='owner'?'Community owner':memberProfile.role||'Member'}</span>
+                {memberProfile.state&&<small>{memberProfile.state}</small>}
+                <small><I.Calendar/>{member.created_at?`Member since ${new Date(member.created_at).toLocaleDateString(undefined,{month:'short',year:'numeric'})}`:'Community member'}</small>
+              </button>;
+            })}
+          </div>}
         </div>}
 
         {activeView==='about'&&<div className="community-content community-about-grid">
@@ -287,10 +353,10 @@ function CommunityFeed({community,users,posts,onBack,onToggleFollow,onToggleNoti
       </div>
 
       {/* Community Post Composer Modal — fully self-contained here */}
-      <Modal open={composerOpen} onClose={()=>{setComposerOpen(false);setCompose("");setPostError('');}} title={`Post in ${community.name}`}
+      <Modal open={composerOpen} onClose={closeComposer} title={`Post in ${community.name}`}
         footer={<>
-          <button className="btn btn-g" onClick={()=>{setComposerOpen(false);setCompose("");setPostError('');}}>Cancel</button>
-          <button className="btn btn-p" onClick={submitPost} disabled={!compose.trim()}><I.Send/>Publish</button>
+          <button className="btn btn-g" onClick={closeComposer}>Cancel</button>
+          <button className="btn btn-p" onClick={submitPost} disabled={!compose.trim()&&!composeImageFile}><I.Send/>Publish</button>
         </>}>
         {/* Community identity row */}
         <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:"var(--sf3)",borderRadius:"var(--r12)",border:"1px solid var(--bd)",marginBottom:14}}>
@@ -304,6 +370,7 @@ function CommunityFeed({community,users,posts,onBack,onToggleFollow,onToggleNoti
         </div>
         {/* Composer */}
         <div style={{display:"flex",gap:10,marginBottom:10}}>
+          <input ref={composeImageInputRef} type="file" accept="image/*" hidden onChange={event=>{const file=event.target.files?.[0];if(!file)return;setComposeImageFile(file);const reader=new FileReader();reader.onload=()=>setComposeImagePreview(reader.result);reader.readAsDataURL(file);}}/>
           <Av initials={profile?.initials || 'US'} size="lg" green src={profile?.avatar_url}/>
           <textarea
             className="compose-input"
@@ -315,6 +382,9 @@ function CommunityFeed({community,users,posts,onBack,onToggleFollow,onToggleNoti
             style={{flex:1}}
           />
         </div>
+        {composeImagePreview&&<div className="compose-attachment-preview"><img src={composeImagePreview} alt="Post attachment preview"/><button className="ib" type="button" title="Remove image" aria-label="Remove image" onClick={()=>{setComposeImageFile(null);setComposeImagePreview('');if(composeImageInputRef.current)composeImageInputRef.current.value='';}}><I.X/></button></div>}
+        {composeLocation!==null&&<div className="compose-location-field"><I.Map/><input className="field" aria-label="Post location" placeholder="Add a place or area" value={composeLocation} onChange={event=>setComposeLocation(event.target.value)}/><button className="ib" type="button" title="Remove location" aria-label="Remove location" onClick={()=>setComposeLocation(null)}><I.X/></button></div>}
+        {emojiPickerOpen&&<div className="compose-emoji-picker" role="group" aria-label="Choose an emoji">{['🌱','🌾','🌿','🌻','🌽','🍅','🌧️','☀️','💧','🚜','📈','💡','👏','❤️','😊','🔥'].map(emoji=><button key={emoji} type="button" aria-label={`Insert ${emoji}`} onClick={()=>setCompose(value=>value+emoji)}>{emoji}</button>)}</div>}
         {/* Live hashtag preview */}
         {liveTags.length>0&&(
           <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:10,paddingTop:8,borderTop:"1px solid var(--bd)"}}>
@@ -323,8 +393,10 @@ function CommunityFeed({community,users,posts,onBack,onToggleFollow,onToggleNoti
           </div>
         )}
         {/* Attachment row */}
-        <div style={{display:"flex",gap:5}}>
-          {[I.Image,I.Map,I.Globe].map((IC,i)=><button key={i} className="btn btn-g btn-sm"><IC/></button>)}
+        <div className="compose-tools">
+          <button className="ib" type="button" title="Add an image" aria-label="Add an image" onClick={()=>composeImageInputRef.current?.click()}><I.Image/></button>
+          <button className={'ib'+(composeLocation!==null?' active':'')} type="button" title="Add a location" aria-label="Add a location" onClick={()=>setComposeLocation(value=>value===null?'':null)}><I.Map/></button>
+          <button className={'ib'+(emojiPickerOpen?' active':'')} type="button" title="Add emoji" aria-label="Add emoji" onClick={()=>setEmojiPickerOpen(value=>!value)}>😊</button>
         </div>
       </Modal>
 
@@ -336,9 +408,10 @@ function CommunityFeed({community,users,posts,onBack,onToggleFollow,onToggleNoti
             <div className="form-g"><label className="label">Category</label><select className="field" value={settingsDraft.category} onChange={e=>setSettingsDraft(d=>({...d,category:e.target.value}))}>{['General','Crops','Livestock','Equipment','Market','Research','Jobs','Local'].map(category=><option key={category}>{category}</option>)}</select></div>
           </div>
           <div className="form-row">
-            <div className="form-g"><label className="label">Icon</label><input className="field" value={settingsDraft.ico} onChange={e=>setSettingsDraft(d=>({...d,ico:e.target.value}))}/></div>
-            <div className="form-g"><label className="label">Cover image URL</label><input className="field" value={settingsDraft.coverImageUrl} onChange={e=>setSettingsDraft(d=>({...d,coverImageUrl:e.target.value}))} placeholder="https://…"/></div>
+            <div className="form-g"><label className="label">Icon fallback</label><input className="field" value={settingsDraft.ico} onChange={e=>setSettingsDraft(d=>({...d,ico:e.target.value}))}/></div>
+            <div className="form-g"><label className="label">Community profile image</label><input className="field" type="file" accept="image/*" onChange={async e=>{const file=e.target.files?.[0];if(!file)return;try{const imageUrl=await uploadSocialImage(currentUserId,file,'community-logo');setSettingsDraft(d=>({...d,imageUrl}));}catch(error){showToast?.('error',error.message||'Unable to upload community image.');}}}/>{settingsDraft.imageUrl&&<img className="community-settings-image-preview" src={settingsDraft.imageUrl} alt="Community profile preview"/>}</div>
           </div>
+          <div className="form-g"><label className="label">Community banner</label><input className="field" type="file" accept="image/*" onChange={async e=>{const file=e.target.files?.[0];if(!file)return;try{const coverImageUrl=await uploadSocialImage(currentUserId,file,'community-banner');setSettingsDraft(d=>({...d,coverImageUrl}));}catch(error){showToast?.('error',error.message||'Unable to upload community banner.');}}}/>{settingsDraft.coverImageUrl&&<img className="community-settings-banner-preview" src={settingsDraft.coverImageUrl} alt="Community banner preview"/>}</div>
           <div className="form-g"><label className="label">Description</label><textarea className="field textarea" value={settingsDraft.desc} onChange={e=>setSettingsDraft(d=>({...d,desc:e.target.value}))}/></div>
         </div>
         <div className="community-settings-section"><div className="sh">Access & participation</div>
@@ -361,7 +434,7 @@ function CommunitySideRail({community,isOwner,ownerName,pendingCount,activeView,
   const membershipLabel=isOwner?'Steward':community.pending?'Request pending':community.followed?'Member':'Visitor';
   return <>
     <section className="community-rail-identity">
-      <div className="community-rail-node">{community.ico}</div>
+      <div className="community-rail-node">{community.imageUrl?<img src={community.imageUrl} alt=""/>:community.ico}</div>
       <span className="community-eyebrow">FIELD CIRCLE / {community.category||'GENERAL'}</span>
       <h2>{community.name}</h2>
       <span className="community-rail-membership"><i/>{membershipLabel}</span>
@@ -387,8 +460,6 @@ function CommunitySideRail({community,isOwner,ownerName,pendingCount,activeView,
         <button className="community-rail-action primary" onClick={()=>onOpenView('manage')}><I.Users/>Review join requests{pendingCount>0&&<b>{pendingCount}</b>}</button>
         <button className="community-rail-action" onClick={onOpenSettings}><I.Settings/>Edit community</button>
       </>:<>
-        {!isMember&&!community.pending&&<button className="community-rail-action primary" onClick={()=>onToggleFollow(community.id)}><I.Plus/>{requiresApproval?'Request to join':'Join this circle'}</button>}
-        {community.pending&&<button className="community-rail-action" onClick={()=>onToggleFollow(community.id,false)}><I.ArrowL/>Cancel join request</button>}
         {isMember&&community.postsEnabled&&<button className="community-rail-action primary" onClick={onCreatePost}><I.Plus/>Share a field note</button>}
         <button className="community-rail-action" onClick={()=>onToggleNotif(community.id)}><I.Bell/>{community.notif?'Turn alerts off':'Turn alerts on'}<span className="community-rail-action-state">{community.notif?'ON':'OFF'}</span></button>
       </>}

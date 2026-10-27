@@ -22,6 +22,7 @@ function ProfilePage({userId,users,posts,comments,following,onToggleFollow,onDM,
       following: 0,
       joined: '',
       avatarUrl: null,
+      bannerUrl: null,
     };
   };
   const user=users[userId] || fallbackUser(userId);
@@ -51,7 +52,7 @@ function ProfilePage({userId,users,posts,comments,following,onToggleFollow,onDM,
         </div>
       </div>
       <div className="scroll" style={{padding:0}}>
-        <div className="profile-banner"/>
+        <div className="profile-banner" style={user.bannerUrl?{backgroundImage:`linear-gradient(90deg,rgba(7,16,10,.52),rgba(7,16,10,.08)),url("${user.bannerUrl}")`}:undefined}/>
         <div className="profile-block">
           <Av initials={user.initials} size="xl" src={user.avatarUrl} green />
           <div className="profile-name-row">

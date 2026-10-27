@@ -17,6 +17,7 @@ export class PostModel {
       pinnedAt: payload.pinned_at || payload.pinnedAt || null,
       createdAt: payload.created_at || payload.createdAt || null,
       image: payload.image || payload.media || null,
+      location: payload.location || null,
     };
   }
 
@@ -31,6 +32,7 @@ export class PostModel {
       comments_enabled: model.commentsEnabled !== false,
       created_at: model.createdAt || new Date().toISOString(),
       image: model.image || null,
+      location: model.location || null,
     };
   }
 }

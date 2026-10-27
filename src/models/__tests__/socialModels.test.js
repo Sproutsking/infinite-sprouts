@@ -10,6 +10,8 @@ test('normalizes post payloads and comment payloads', () => {
     community_id: 'c-1',
     likes: 2,
     shares: 1,
+    comments_enabled: false,
+    location: 'Kaduna, Nigeria',
     pinned_at: '2024-01-02T00:00:00.000Z',
     created_at: '2024-01-01T00:00:00.000Z',
   });
@@ -18,6 +20,9 @@ test('normalizes post payloads and comment payloads', () => {
   assert.equal(post.body, 'Hello');
   assert.deepEqual(post.tags, ['farmers']);
   assert.equal(post.communityId, 'c-1');
+  assert.equal(post.commentsEnabled, false);
+  assert.equal(post.location, 'Kaduna, Nigeria');
+  assert.equal(PostModel.toPayload(post).comments_enabled, false);
   assert.equal(post.pinnedAt, '2024-01-02T00:00:00.000Z');
 
   const comment = CommentModel.fromPayload({
@@ -60,6 +65,7 @@ test('normalizes owner-managed community settings', () => {
     posts_enabled: false,
     comments_enabled: false,
     rules: 'Be kind',
+    image_url: 'https://example.test/community.jpg',
     cover_image_url: 'https://example.test/cover.jpg',
   });
 
@@ -70,4 +76,6 @@ test('normalizes owner-managed community settings', () => {
   assert.equal(community.postsEnabled, false);
   assert.equal(community.commentsEnabled, false);
   assert.equal(community.rules, 'Be kind');
+  assert.equal(community.imageUrl, 'https://example.test/community.jpg');
+  assert.equal(community.coverImageUrl, 'https://example.test/cover.jpg');
 });

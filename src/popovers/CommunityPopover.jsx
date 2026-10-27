@@ -30,7 +30,7 @@ function CommunityPopover({community,open,onClose}){
     <div className={"profile-pop community-popover "+anchorClass} ref={ref} onClick={e=>e.stopPropagation()}>
       <div className="community-popover-cover" style={community.coverImageUrl?{backgroundImage:`url("${community.coverImageUrl}")`}:{background:community.bg}}>
         <span className="community-popover-category"><I.Seedling/>{community.category||'General'}</span>
-        <span className="community-popover-mark">{community.ico}</span>
+        <span className="community-popover-mark">{community.imageUrl?<img src={community.imageUrl} alt=""/>:community.ico}</span>
       </div>
       <div className="community-popover-content">
         <div className="community-popover-name">{community.name}</div>

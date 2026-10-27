@@ -3,6 +3,7 @@ import I from '../icons/icons.jsx';
 import Modal from './Modal.jsx';
 import { useProfile } from '../context/ProfileContext.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
+import nigeriaLocations from 'nigeria-state-lga-data';
 
 function FarmerOnboarding({ open, onClose, onSuccess }) {
   const { setupFarmerProfile, loading } = useProfile();
@@ -19,11 +20,14 @@ function FarmerOnboarding({ open, onClose, onSuccess }) {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
 
-  const states = ['Abia', 'Adamawa', 'Akwa Ibom', 'Bauchi', 'Bayelsa', 'Benue', 'Borno', 'Cross River', 'Delta', 'Ebonyi', 'Edo', 'Ekiti', 'Enugu', 'Federal Capital Territory', 'Gombe', 'Imo', 'Jigawa', 'Kaduna', 'Kano', 'Katsina', 'Kebbi', 'Kogi', 'Kwara', 'Lagos', 'Nasarawa', 'Niger', 'Ogun', 'Ondo', 'Osun', 'Oyo', 'Plateau', 'Rivers', 'Sokoto', 'Taraba', 'Yobe', 'Zamfara'];
+  const states = nigeriaLocations.getStates();
+  const localGovernmentAreas = data.state ? nigeriaLocations.getLgas(data.state) : [];
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setData(prev => ({ ...prev, [name]: value }));
+    setData(prev => name === 'state'
+      ? { ...prev, state: value, lga: '' }
+      : { ...prev, [name]: value });
     setError('');
   };
 
@@ -106,7 +110,10 @@ function FarmerOnboarding({ open, onClose, onSuccess }) {
               </div>
               <div className="form-g">
                 <label className="label">LGA (optional)</label>
-                <input className="field" type="text" name="lga" placeholder="e.g., Ibadan" value={data.lga} onChange={handleChange} />
+                <select className="field" name="lga" value={data.lga} onChange={handleChange} disabled={!data.state} style={{ padding: '10px 12px' }}>
+                  <option value="">{data.state ? 'Select your local government area' : 'Select a state first'}</option>
+                  {localGovernmentAreas.map(lga => <option key={lga} value={lga}>{lga}</option>)}
+                </select>
               </div>
               {error && <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 10 }}>{error}</div>}
             </div>

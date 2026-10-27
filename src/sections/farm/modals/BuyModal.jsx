@@ -13,7 +13,7 @@ function BuyModal({open,onClose,item,isLabor}){
     <Modal open={open} onClose={onClose} title={isLabor?"Hire Team":"Purchase Item"} lg
       footer={<><button className="btn btn-g" onClick={onClose}>Close</button><button className="btn btn-p btn-lg" disabled title="Payments are disabled until the real payment and Cardano integrations are deployed"><I.Check/>Payments unavailable</button></>}>
       <div style={{display:"flex",gap:10,padding:"10px 12px",background:"var(--sf3)",borderRadius:"var(--r12)",border:"1px solid var(--bd)",marginBottom:16}}>
-        <span style={{fontSize:28}}>{item.icon}</span>
+        {/^https?:\/\//i.test(item.image_url||'')?<img className="buy-item-image" src={item.image_url} alt={item.name||item.service_name}/>:<span style={{fontSize:28}}>{item.icon||'🌿'}</span>}
         <div><div style={{fontWeight:700,fontSize:13,color:"var(--t1)"}}>{item.name||item.service_name}</div><div style={{fontSize:11,color:"var(--t4)"}}>{fmt(unitPrice)} IST {priceUnit}</div></div>
       </div>
       <div className="form-g">

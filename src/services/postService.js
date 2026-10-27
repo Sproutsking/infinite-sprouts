@@ -61,7 +61,7 @@ export async function createPost(payload) {
   const model = PostModel.fromPayload({ ...payload, author_id: authorId, authorId });
   const bodyPayload = PostModel.toPayload(model);
 
-  if (functionsUrl) {
+  if (functionsUrl && !bodyPayload.image && !bodyPayload.location) {
     try {
       const response = await callEdgeFunction('create-post', bodyPayload);
       return PostModel.fromPayload(response);

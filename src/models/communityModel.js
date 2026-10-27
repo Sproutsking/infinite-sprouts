@@ -16,6 +16,7 @@ export class CommunityModel {
       postsEnabled: payload.posts_enabled !== false && payload.postsEnabled !== false,
       commentsEnabled: payload.comments_enabled !== false && payload.commentsEnabled !== false,
       rules: payload.rules || '',
+      imageUrl: payload.image_url || payload.imageUrl || '',
       coverImageUrl: payload.cover_image_url || payload.coverImageUrl || '',
       count: Number(payload.count || 0),
       ico: payload.ico || '🌱',

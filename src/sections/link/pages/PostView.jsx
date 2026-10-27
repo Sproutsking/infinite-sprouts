@@ -194,7 +194,7 @@ function PostView({postId,highlightCommentId,posts,setPosts,comments,setComments
 
   return(
     <>
-    <div className="main main-link">
+    <div className="main main-link post-view-page">
       <div className="post-view-hd">
         <button className="ib" onClick={onBack}><I.ArrowL/></button>
         <div style={{fontWeight:700,fontSize:13,color:"var(--t1)",flex:1}}>Post</div>
@@ -204,7 +204,8 @@ function PostView({postId,highlightCommentId,posts,setPosts,comments,setComments
         <div className="post-view-main">
           <AuthorTrigger userId={post.authorId} size="lg" createdAt={post.createdAt}/>
           <div className="post-view-body">{post.body}</div>
-          {post.image&&<div className="post-view-img">{post.image}</div>}
+          {post.location&&<div className="post-location post-view-location"><I.Map/>{post.location}</div>}
+          {post.image&&<div className="post-view-img">{/^https?:\/\//i.test(post.image)?<img src={post.image} alt="Post attachment"/>:post.image}</div>}
           {post.tags&&post.tags.length>0&&<div className="post-tags">{post.tags.map(t=><span key={t} className="post-tag">#{t}</span>)}</div>}
           <div className="post-view-time">{timeLabel} · Infinite Sprouts</div>
           <div className="post-view-stats">
@@ -228,7 +229,7 @@ function PostView({postId,highlightCommentId,posts,setPosts,comments,setComments
         </div> : <div className="notice ni"><I.Info/><span>The author has turned off comments for this post.</span></div>}
         <div className="comment-thread">
           {postComments.length===0?
-            <div className="empty"><div className="empty-ico">💬</div><div className="empty-t">No comments yet</div><div className="empty-s">Be the first to reply</div></div>:
+            <div className="empty comment-empty"><div className="empty-ico"><I.Comment/></div><div className="empty-t">{post.commentsEnabled?'No comments yet':'Comments are turned off'}</div><div className="empty-s">{post.commentsEnabled?'Be the first to reply':'The author has disabled replies on this post.'}</div></div>:
             postComments.map(c=><CommentRow key={c.id} c={c}/>)
           }
         </div>

@@ -296,7 +296,7 @@ function FarmSection({showToast,listOpen,setListOpen,activeFarmTab,setActiveFarm
               {visibleItems.map(item=>(
                 <div key={item.id} className="item-card">
                   <div className="item-thumb">
-                    <span className="ith-icon">{item.icon||'🌿'}</span>
+                    <span className="ith-icon">{/^https?:\/\//i.test(item.image_url||'')?<img src={item.image_url} alt={item.name} loading="lazy"/>:item.icon||item.image_url||'🌿'}</span>
                     <span className="ith-badge"><span className="badge" style={{background:["my-farms","my-produce","my-labor"].includes(tab)&&item.status==='active'?'var(--g)':item.team_size?'var(--ac)':'var(--t4)'}}>{tab==='my-farms'?`${item.status} · ${item.verification_status}`:item.status||item.team_size||item.quantity_available}</span></span>
                   </div>
                   <div className="item-body">
@@ -351,7 +351,7 @@ function FarmSection({showToast,listOpen,setListOpen,activeFarmTab,setActiveFarm
       <FarmDetailModal farm={farmDetail} canInvest={false} isOwner={farmDetail?.owner_id===user?.id} farmerId={user?.id} showToast={showToast} onClose={()=>setFarmDetail(null)}/>
       <Modal open={!!detailItem} onClose={()=>setDetailItem(null)} title="Details" footer={<><button className="btn btn-g" onClick={()=>setDetailItem(null)}>Close</button><button className="btn btn-p" onClick={()=>{if(tab==='labor')setLaborRequestService(detailItem);else setBuyItem(detailItem);setDetailItem(null);}}><I.Cart/>{tab==="labor"?"Request hire":"Buy"}</button></>}>
         {detailItem&&<div>
-          <div style={{fontSize:48,textAlign:"center",marginBottom:10}}>{detailItem.icon||'🌿'}</div>
+          <div className="listing-detail-image">{/^https?:\/\//i.test(detailItem.image_url||'')?<img src={detailItem.image_url} alt={detailItem.name}/>:detailItem.icon||'🌿'}</div>
           <div style={{fontFamily:"var(--fd)",fontSize:18,fontWeight:900,textAlign:"center",color:"var(--t1)",marginBottom:3}}>{detailItem.name}</div>
           <div style={{textAlign:"center",color:"var(--ac)",fontFamily:"var(--fd)",fontSize:19,fontWeight:900,marginBottom:16}}>{fmt(detailItem.daily_rate||detailItem.price_per_unit)} IST {tab==='labor'?'/ day':`/ ${detailItem.unit||'unit'}`}</div>
           <div style={{color:"var(--t4)",fontSize:13,lineHeight:1.5}}>{detailItem.description}</div>
@@ -359,8 +359,14 @@ function FarmSection({showToast,listOpen,setListOpen,activeFarmTab,setActiveFarm
       </Modal>
 
       <CreateFarmModal open={createFarmOpen} farm={editingFarm} onClose={()=>{setCreateFarmOpen(false);setEditingFarm(null);}} onSuccess={async()=>{setCreateFarmOpen(false);setEditingFarm(null);try{const [mine,market]=await Promise.all([farmService.fetchFarmerProjects(user.id),farmService.fetchAllFarms(50)]);setMyFarms(mine||[]);setFarms(market||[]);setTab('my-farms');}catch(error){console.error('Error refreshing farm listings:',error);showToast('error','Farm saved, but listings could not be refreshed.');}}} showToast={showToast}/>
-      <CreateProduceListingModal open={createProduceOpen} onClose={()=>setCreateProduceOpen(false)} onSuccess={async()=>{
+      <CreateProduceListingModal open={createProduceOpen} onClose={()=>setCreateProduceOpen(false)} onSuccess={async createdListing=>{
         setCreateProduceOpen(false);
+        if(createdListing){
+          setMyProduce(items=>[createdListing,...items.filter(item=>item.id!==createdListing.id)]);
+          setSearch('');
+          setFilters({category:'',condition:'',state:'',minPrice:'',maxPrice:'',sort:'newest'});
+          setTab('my-produce');
+        }
         try{
           const [mine,market]=await Promise.all([
             produceService.getSellerListings(user.id),
@@ -368,6 +374,7 @@ function FarmSection({showToast,listOpen,setListOpen,activeFarmTab,setActiveFarm
           ]);
           setMyProduce(mine||[]);
           setProduce(market||[]);
+          setTab('my-produce');
         }
         catch(error){console.error('Error refreshing produce listings:',error);showToast('error','Produce listed, but your listings could not be refreshed.');}
       }} showToast={showToast}/>

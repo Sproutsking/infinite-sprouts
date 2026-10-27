@@ -3,12 +3,16 @@ import I from '../icons/icons.jsx';
 import Modal from './Modal.jsx';
 import { fmt } from '../utils/helpers.js';
 import produceService from '../services/produceService.js';
+import { uploadMarketplaceImage } from '../services/profileService.js';
 import { useAuth } from '../context/AuthContext.jsx';
+import nigeriaLocations from 'nigeria-state-lga-data';
 
 function CreateProduceListingModal({ open, onClose, onSuccess, showToast }) {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [imageFile, setImageFile] = useState(null);
+  const [imagePreview, setImagePreview] = useState('');
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -26,16 +30,16 @@ function CreateProduceListingModal({ open, onClose, onSuccess, showToast }) {
     expiry_date: '',
   });
 
-  const states = ['Abia', 'Adamawa', 'Akwa Ibom', 'Bauchi', 'Bayelsa', 'Benue', 'Borno', 'Cross River', 'Delta', 'Ebonyi', 'Edo', 'Ekiti', 'Enugu', 'Federal Capital Territory', 'Gombe', 'Imo', 'Jigawa', 'Kaduna', 'Kano', 'Katsina', 'Kebbi', 'Kogi', 'Kwara', 'Lagos', 'Nasarawa', 'Niger', 'Ogun', 'Ondo', 'Osun', 'Oyo', 'Plateau', 'Rivers', 'Sokoto', 'Taraba', 'Yobe', 'Zamfara'];
+  const states = nigeriaLocations.getStates();
+  const localGovernmentAreas = formData.state ? nigeriaLocations.getLgas(formData.state) : [];
   const produceTypes = ['Maize', 'Rice', 'Cassava', 'Tomato', 'Pepper', 'Onion', 'Yam', 'Beans', 'Leafy Greens', 'Cucumber', 'Cabbage', 'Carrot', 'Lettuce', 'Other'];
   const units = ['kg', 'bag', 'basket', 'box', 'piece', 'crate'];
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value,
-    }));
+    setFormData(prev => name === 'state'
+      ? { ...prev, state: value, lga: '' }
+      : { ...prev, [name]: type === 'checkbox' ? checked : value });
     setError('');
   };
 
@@ -61,6 +65,7 @@ function CreateProduceListingModal({ open, onClose, onSuccess, showToast }) {
 
     setLoading(true);
     try {
+      const imageUrl = imageFile ? await uploadMarketplaceImage(user.id, imageFile) : null;
       const produceData = {
         seller_id: user.id,
         name: formData.name,
@@ -77,7 +82,7 @@ function CreateProduceListingModal({ open, onClose, onSuccess, showToast }) {
         can_deliver: formData.can_deliver,
         delivery_radius_km: formData.can_deliver ? parseInt(formData.delivery_radius_km) : null,
         expiry_date: formData.expiry_date || null,
-        image_url: '🌿',
+        image_url: imageUrl,
       };
 
       const result = await produceService.createProduceListing(produceData);
@@ -91,6 +96,8 @@ function CreateProduceListingModal({ open, onClose, onSuccess, showToast }) {
         location_details: '', certification: '', can_deliver: false,
         delivery_radius_km: '10', expiry_date: '',
       });
+      setImageFile(null);
+      setImagePreview('');
       setError('');
       onClose();
     } catch (err) {
@@ -166,6 +173,11 @@ function CreateProduceListingModal({ open, onClose, onSuccess, showToast }) {
             <label className="label">Description</label>
             <textarea className="field" name="description" placeholder="Describe your produce..." value={formData.description} onChange={handleChange} style={{ minHeight: 60, resize: 'vertical' }} />
           </div>
+          <div className="form-g" style={{ marginBottom: 12 }}>
+            <label className="label">Produce photo (optional)</label>
+            <input className="field" type="file" accept="image/*" onChange={event=>{const file=event.target.files?.[0];if(!file)return;setImageFile(file);const reader=new FileReader();reader.onload=()=>setImagePreview(reader.result);reader.readAsDataURL(file);}} />
+            {imagePreview&&<img className="listing-image-preview" src={imagePreview} alt="Produce listing preview"/>}
+          </div>
         </div>
 
         <div>
@@ -179,7 +191,10 @@ function CreateProduceListingModal({ open, onClose, onSuccess, showToast }) {
             </div>
             <div className="form-g">
               <label className="label">LGA *</label>
-              <input className="field" type="text" name="lga" placeholder="e.g., Ibadan" value={formData.lga} onChange={handleChange} />
+              <select className="field" name="lga" value={formData.lga} onChange={handleChange} disabled={!formData.state}>
+                <option value="">{formData.state ? 'Select local government' : 'Select a state first'}</option>
+                {localGovernmentAreas.map(lga => <option key={lga} value={lga}>{lga}</option>)}
+              </select>
             </div>
           </div>
 
